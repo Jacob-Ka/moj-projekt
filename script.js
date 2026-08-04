@@ -1,30 +1,38 @@
-function sprawdzCene() {
-    const nazwa = document.getElementById('nazwa').value || 'Produkt';
-    const stara = parseFloat(document.getElementById('staraCena').value);
-    const nowa = parseFloat(document.getElementById('nowaCena').value);
-    const wynikDiv = document.getElementById('wynik');
+async function analizujProdukt() {
+    const url = document.getElementById('productUrl').value;
+    const myPrice = parseFloat(document.getElementById('myPrice').value);
+    const loader = document.getElementById('loader');
+    const resultsCard = document.getElementById('resultsCard');
 
-    if (isNaN(stara) || isNaN(nowa)) {
-        wynikDiv.style.display = 'block';
-        wynikDiv.className = 'wynik-box drozej';
-        wynikDiv.innerHTML = 'Wpisz poprawne liczby w obu polach cen!';
+    if (!url || isNaN(myPrice)) {
+        alert("Wpisz poprawny link oraz swoją obecną cenę!");
         return;
     }
 
-    const roznica = (stara - nowa).toFixed(2);
-    const procent = Math.abs(((roznica / stara) * 100)).toFixed(1);
+    // Pokazujemy ładowanie
+    loader.style.display = 'block';
+    resultsCard.style.display = 'none';
 
-    wynikDiv.style.display = 'block';
+    // Udawany czas odpowiedzi (w kolejnym kroku zastąpimy to zapytaniem do prawdziwego backendu)
+    setTimeout(() => {
+        loader.style.display = 'none';
+        resultsCard.style.display = 'block';
 
-    if (nowa < stara) {
-        wynikDiv.className = 'wynik-box taniej';
-        wynikDiv.innerHTML = `🎉 Super okazja! <strong>${nazwa}</strong> jest tańszy o <strong>${roznica} zł</strong> (${procent}% taniej).`;
-    } else if (nowa > stara) {
-        const podwyzka = Math.abs(roznica).toFixed(2);
-        wynikDiv.className = 'wynik-box drozej';
-        wynikDiv.innerHTML = `⚠️ Drożej! <strong>${nazwa}</strong> podrożał o <strong>${podwyzka} zł</strong> (+${procent}%).`;
-    } else {
-        wynikDiv.className = 'wynik-box bez-zmian';
-        wynikDiv.innerHTML = `Brak zmian. Cena <strong>${nazwa}</strong> jest taka sama.`;
-    }
+        // Przykładowy wynik pobrany ze skanowania
+        const competitorPrice = myPrice + 5.00; 
+        const isLowStock = true;
+
+        document.getElementById('competitorPrice').textContent = `${competitorPrice.toFixed(2)} zł`;
+        document.getElementById('stockStatus').textContent = isLowStock ? "Ostatnie sztuki! ⚠️" : "Wysoka dostępność";
+
+        // Sugestia generowana przez AI
+        let aiText = "";
+        if (isLowStock && competitorPrice > myPrice) {
+            aiText = `Konkurencja ma wyższą cenę (${competitorPrice} zł) i wyprzedaje magazyn. Zalecenie AI: Podnieś cenę o 3.50 zł. Zwiększysz marżę, a klienci i tak kupią u Ciebie!`;
+        } else {
+            aiText = `Rynek jest stabilny. Utrzymaj obecną cenę ${myPrice} zł.`;
+        }
+
+        document.getElementById('aiSuggestion').textContent = aiText;
+    }, 2000);
 }

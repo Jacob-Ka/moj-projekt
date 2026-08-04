@@ -3,22 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kontroler Ceny</title>
+    <title>PriceAI - Smart Price Monitor</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>📊 Kontroler Ceny</h1>
-        <p>Sprawdź, czy to prawdziwa okazja!</p>
+        <h1>🤖 PriceAI Monitor</h1>
+        <p>Wklej link do produktu konkurencji, a AI przeanalizuje rynek.</p>
 
         <div class="form-group">
-            <input type="text" id="nazwa" placeholder="Nazwa produktu (np. Kawa)">
-            <input type="number" id="staraCena" placeholder="Stara cena (zł)">
-            <input type="number" id="nowaCena" placeholder="Nowa cena (zł)">
-            <button onclick="sprawdzCene()">Sprawdź różnicę</button>
+            <input type="url" id="productUrl" placeholder="https://sklep.pl/produkt-123" required>
+            <input type="number" id="myPrice" placeholder="Twoja obecna cena (zł)">
+            <button onclick="analizujProdukt()">Rozpocznij analizę AI</button>
         </div>
 
-        <div id="wynik" class="wynik-box"></div>
+        <div id="loader" class="loader" style="display: none;">
+            🔍 Bot skanuje stronę konkurencji i pyta AI o strategię...
+        </div>
+
+        <div id="resultsCard" class="results-card" style="display: none;">
+            <h2>📊 Raport Rynkowy</h2>
+            <div class="info-grid">
+                <div>
+                    <span>Cena konkurencji:</span>
+                    <strong id="competitorPrice">-</strong>
+                </div>
+                <div>
+                    <span>Magazyn konkurencji:</span>
+                    <strong id="stockStatus">-</strong>
+                </div>
+            </div>
+
+            <div class="ai-box">
+                <h3>💡 Rekomendacja AI:</h3>
+                <p id="aiSuggestion">Czekam na dane...</p>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>
