@@ -3,11 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mój Projekt</title>
+    <title>Kontroler Ceny</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Cześć świecie! 🚀</h1>
-    <p>Moja pierwsza strona podpięta pod GitHuba!</p>
+    <div class="container">
+        <h1>📊 Kontroler Ceny</h1>
+        <p>Sprawdź, czy to prawdziwa okazja!</p>
+
+        <div class="form-group">
+            <input type="text" id="nazwa" placeholder="Nazwa produktu (np. Kawa)">
+            <input type="number" id="staraCena" placeholder="Stara cena (zł)">
+            <input type="number" id="nowaCena" placeholder="Nowa cena (zł)">
+            <button onclick="sprawdzCene()">Sprawdź różnicę</button>
+        </div>
+
+        <div id="wynik" class="wynik-box"></div>
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>
