@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>PriceAI Cloud - Inteligentny Repricing dla e-Commerce</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; margin: 0; color: #f8fafc; }
+        .nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 40px; border-bottom: 1px solid #334155; }
+        .logo { font-size: 20px; font-weight: 700; color: #818cf8; }
+        .nav-actions { display: flex; gap: 12px; }
+        button { padding: 11px 22px; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #4f46e5; color: white; }
+        .btn-primary:hover { background: #4338ca; }
+        .btn-ghost { background: transparent; color: #cbd5e1; border: 1px solid #334155; }
+        .btn-ghost:hover { background: #1e293b; }
+
+        .hero { text-align: center; padding: 90px 20px 70px; max-width: 800px; margin: 0 auto; }
+        .hero h1 { font-size: 42px; margin-bottom: 18px; line-height: 1.2; }
+        .hero h1 span { color: #818cf8; }
+        .hero p { font-size: 17px; color: #94a3b8; line-height: 1.6; margin-bottom: 34px; }
+        .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+        .hero-actions button { padding: 14px 30px; font-size: 15px; }
+
+        /* Sekcja obsługiwanych platform - żeby było jasne PRZED rejestracją,
+           z jakim systemem sklepowym to zadziała. */
+        .platforms { max-width: 900px; margin: 0 auto 60px; padding: 0 20px; text-align: center; }
+        .platforms-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700; margin-bottom: 18px; }
+        .platforms-grid { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+        .platform-badge { display: flex; align-items: center; gap: 10px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px 22px; font-size: 14px; font-weight: 600; color: #e2e8f0; }
+        .platform-badge .icon { font-size: 20px; }
+        .platform-badge.universal { border-color: #4338ca; background: #1e1b4b; color: #a5b4fc; }
+
+        .features { max-width: 1100px; margin: 0 auto; padding: 40px 20px 100px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+        .feature-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 26px; }
+        .feature-card .icon { font-size: 28px; margin-bottom: 14px; }
+        .feature-card h3 { margin: 0 0 8px 0; font-size: 16px; color: #f8fafc; }
+        .feature-card p { margin: 0; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+        .modal-card { background: #1e293b; border: 1px solid #334155; width: 400px; max-width: 92%; border-radius: 12px; padding: 30px; }
+        .modal-card h2 { margin-top: 0; text-align: center; color: #f8fafc; }
+        .modal-card input { width: 100%; padding: 12px 14px; margin-bottom: 14px; border: 2px solid #334155; border-radius: 8px; background: #0f172a; color: #fff; font-size: 14px; }
+        .modal-card input:focus { outline: none; border-color: #4f46e5; }
+        .modal-card button.btn-primary { width: 100%; padding: 13px; margin-top: 6px; }
+        .modal-error { color: #f87171; font-size: 13px; text-align: center; margin-bottom: 10px; min-height: 18px; }
+        .switch-link { text-align: center; margin-top: 16px; font-size: 13px; color: #94a3b8; }
+        .switch-link a { color: #818cf8; cursor: pointer; text-decoration: underline; }
+        .close-modal { position: absolute; top: 18px; right: 22px; background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; padding: 0; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <div class="logo">PriceAI Cloud</div>
+        <div class="nav-actions">
+            <select id="langSelect" onchange="ustawJezyk(this.value)" style="background:#0f172a; color:#fff; border:1px solid #334155; border-radius:6px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; margin-right: 6px;">
+                <option value="pl">🇵🇱 Polski</option>
+                <option value="en">🇬🇧 English</option>
+                <option value="es">🇪🇸 Español</option>
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="fr">🇫🇷 Français</option>
+            </select>
+            <button class="btn-ghost" data-i18n="landing_login" onclick="pokazModal('login')"></button>
+            <button class="btn-primary" data-i18n="landing_register" onclick="pokazModal('register')"></button>
+        </div>
+    </div>
+
+    <div class="hero">
+        <h1 data-i18n-html="landing_hero_title"></h1>
+        <p data-i18n="landing_hero_desc"></p>
+        <div class="hero-actions">
+            <button class="btn-primary" data-i18n="landing_btn_demo" onclick="uruchomDemo()"></button>
+            <button class="btn-ghost" data-i18n="landing_btn_register" onclick="pokazModal('register')"></button>
+        </div>
+    </div>
+
+    <!-- Obsługiwane platformy - widoczne od razu, jeszcze przed rejestracją,
+         żeby ktoś nie musiał zakładać konta, żeby się dowiedzieć, czy jego
+         sklep w ogóle da się podłączyć. -->
+    <div class="platforms">
+        <div class="platforms-label">Współpracuje z</div>
+        <div class="platforms-grid">
+            <div class="platform-badge"><span class="icon">🛒</span> WooCommerce</div>
+            <div class="platform-badge"><span class="icon">🛍️</span> Shopify</div>
+            <div class="platform-badge universal"><span class="icon">📄</span> Dowolny inny system (import/eksport CSV)</div>
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="feature-card">
+            <div class="icon">🤖</div>
+            <h3 data-i18n="feature1_title"></h3>
+            <p data-i18n="feature1_desc"></p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">📦</div>
+            <h3 data-i18n="feature2_title"></h3>
+            <p data-i18n="feature2_desc"></p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">🛡️</div>
+            <h3 data-i18n="feature3_title"></h3>
+            <p data-i18n="feature3_desc"></p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">🧾</div>
+            <h3 data-i18n="feature4_title"></h3>
+            <p data-i18n="feature4_desc"></p>
+        </div>
+    </div>
+
+    <footer style="text-align:center; padding:30px 20px 50px; color:#64748b; font-size:12px; border-top:1px solid #334155; margin-top:20px;">
+        <a href="regulamin.html" style="color:#64748b; margin: 0 10px;">Regulamin</a>
+        <a href="polityka-prywatnosci.html" style="color:#64748b; margin: 0 10px;">Polityka Prywatności</a>
+    </footer>
+
+    <!-- Modal logowania -->
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-card" style="position: relative;">
+            <button class="close-modal" onclick="zamknijModale()">&times;</button>
+            <h2 data-i18n="login_title"></h2>
+            <div class="modal-error" id="loginError"></div>
+            <input type="email" id="loginEmail" data-i18n-ph="login_email_ph" placeholder="Email">
+            <input type="password" id="loginHaslo" data-i18n-ph="login_pass_ph" placeholder="Hasło">
+            <button class="btn-primary" data-i18n="login_btn" onclick="zaloguj()"></button>
+            <div class="switch-link"><span data-i18n="login_switch"></span> <a onclick="pokazModal('register')" data-i18n="login_switch_link"></a></div>
+        </div>
+    </div>
+
+    <!-- Modal rejestracji -->
+    <div class="modal-overlay" id="registerModal">
+        <div class="modal-card" style="position: relative;">
+            <button class="close-modal" onclick="zamknijModale()">&times;</button>
+            <h2 data-i18n="register_title"></h2>
+            <div class="modal-error" id="registerError"></div>
+            <input type="email" id="registerEmail" data-i18n-ph="register_email_ph" placeholder="Email">
+            <input type="password" id="registerHaslo" data-i18n-ph="register_pass_ph" placeholder="Hasło (min. 6 znaków)">
+            <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#94a3b8; margin-bottom:14px; cursor:pointer; line-height:1.5;">
+                <input type="checkbox" id="registerZgoda" style="margin-top:2px; width:auto; flex-shrink:0;">
+                <span>Zapoznałem/-am się i akceptuję <a href="regulamin.html" target="_blank" style="color:#818cf8;">Regulamin</a> oraz <a href="polityka-prywatnosci.html" target="_blank" style="color:#818cf8;">Politykę Prywatności</a>.</span>
+            </label>
+            <button class="btn-primary" data-i18n="register_btn" onclick="zarejestruj()"></button>
+            <div class="switch-link"><span data-i18n="register_switch"></span> <a onclick="pokazModal('login')" data-i18n="register_switch_link"></a></div>
+        </div>
+    </div>
+
+    <script src="i18n.js"></script>
+    <script>
+        const API = '/api';
+
+        function pokazModal(typ) {
+            zamknijModale();
+            document.getElementById(typ + 'Modal').style.display = 'flex';
+        }
+        function zamknijModale() {
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('registerModal').style.display = 'none';
+            document.getElementById('loginError').innerText = '';
+            document.getElementById('registerError').innerText = '';
+        }
+        // Modal zamyka się TYLKO przyciskiem X - przypadkowe kliknięcie
+        // w tło nie zamyka formularza logowania/rejestracji, żeby nie
+        // stracić wpisanych danych przez nieuwagę.
+
+        async function uruchomDemo() {
+            try {
+                const res = await fetch(`${API}/demo/start`, { method: 'POST', credentials: 'include' });
+                const data = await res.json();
+                if (data.success) window.location.href = 'index.html';
+                else alert('Nie udało się uruchomić DEMO. Sprawdź czy serwer działa.');
+            } catch (e) {
+                alert('Nie udało się połączyć z serwerem. Sprawdź czy node server.js jest uruchomiony.');
+            }
+        }
+
+        async function zaloguj() {
+            const email = document.getElementById('loginEmail').value;
+            const haslo = document.getElementById('loginHaslo').value;
+            const errEl = document.getElementById('loginError');
+            errEl.innerText = '';
+            try {
+                const res = await fetch(`${API}/login`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, haslo })
+                });
+                const data = await res.json();
+                if (data.success) window.location.href = 'index.html';
+                else errEl.innerText = data.error || 'Błąd logowania.';
+            } catch (e) {
+                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+            }
+        }
+
+        async function zarejestruj() {
+            const email = document.getElementById('registerEmail').value;
+            const haslo = document.getElementById('registerHaslo').value;
+            const errEl = document.getElementById('registerError');
+            errEl.innerText = '';
+
+            const zgoda = document.getElementById('registerZgoda')?.checked;
+            if (!zgoda) {
+                errEl.innerText = 'Musisz zaakceptować Regulamin oraz Politykę Prywatności, żeby założyć konto.';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/register`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, haslo, akceptujeRegulamin: true })
+                });
+                const data = await res.json();
+                if (data.success) window.location.href = 'index.html';
+                else errEl.innerText = data.error || 'Błąd rejestracji.';
+            } catch (e) {
+                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+            }
+        }
+    </script>
+</body>
+</html>

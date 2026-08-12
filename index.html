@@ -2,45 +2,873 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PriceAI - Smart Price Monitor</title>
-    <link rel="stylesheet" href="style.css">
+    <title>PriceAI Cloud - All-in-One e-Commerce Hub & Global Repricer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; margin: 0; padding: 30px; color: #f8fafc; }
+        .container { max-width: 1550px; margin: auto; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); border: 1px solid #334155; }
+
+        /* Nawigacja / Zakładki e-Commerce Hub */
+        .hub-nav { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; flex-wrap: wrap; }
+        .hub-nav-tab { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
+        .hub-nav-tab:hover, .hub-nav-tab.active { background: #4f46e5; color: white; border-color: #4f46e5; box-shadow: 0 0 15px rgba(79, 70, 229, 0.4); }
+
+        h1 { text-align: center; color: #818cf8; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #94a3b8; margin-bottom: 25px; font-size: 14px; }
+
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .kpi-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
+        .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #4f46e5; }
+        .kpi-title { font-size: 13px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .kpi-value-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+        .kpi-value { font-size: 24px; font-weight: 700; color: #f8fafc; }
+        .kpi-sub { font-size: 12px; color: #94a3b8; margin-top: 5px; font-weight: 600; }
+        .trend-up { color: #34d399; font-size: 12px; font-weight: 700; }
+        .trend-down { color: #f87171; font-size: 12px; font-weight: 700; }
+
+        /* Zmodernizowany panel konfiguracji */
+        .config-panel { background: #0f172a; padding: 25px; border-radius: 10px; margin-bottom: 25px; border: 1px solid #334155; }
+        .config-panel h3 { margin-top: 0; color: #f8fafc; font-size: 17px; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+
+        .crawler-status-box { background: linear-gradient(135deg, #090d16 0%, #1e293b 100%); color: #f8fafc; padding: 18px 22px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3); }
+        .crawler-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+        .crawler-title { font-weight: 700; font-size: 15px; color: #818cf8; letter-spacing: 0.3px; display: flex; align-items: center; gap: 8px; }
+        .crawler-badge { background: #059669; color: #ffffff; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+        .crawler-pulse { width: 7px; height: 7px; background: #ffffff; border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+        .crawler-desc { font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0; }
+
+        .inputs-grid { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 15px; }
+        .input-group { flex: 1; min-width: 220px; display: flex; flex-direction: column; }
+        .inputs-grid input, .inputs-grid select { padding: 11px 14px; border: 2px solid #334155; border-radius: 8px; font-size: 14px; background: #1e293b; color: #fff; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); transition: all 0.2s ease; }
+        .inputs-grid input:hover, .inputs-grid select:hover { border-color: #475569; }
+        .inputs-grid input:focus, .inputs-grid select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.25), 0 2px 5px rgba(0, 0, 0, 0.2); }
+        .help-text { font-size: 11px; color: #94a3b8; margin-top: 5px; line-height: 1.4; }
+
+        .global-toggle-row { display: flex; align-items: center; justify-content: space-between; background: #1e293b; padding: 14px 18px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 15px; }
+        .global-toggle-info { font-size: 13px; font-weight: 600; color: #f8fafc; }
+        .global-toggle-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+        .import-panel { text-align: center; margin-top: 15px; }
+
+        button { padding: 12px 28px; background: #4f46e5; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; transition: background 0.2s; }
+        button:hover { background: #4338ca; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .table-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 15px; background: #0f172a; padding: 15px; border-radius: 8px; border: 1px solid #334155; }
+        .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-tab { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; font-size: 13px; font-weight: 600; color: #cbd5e1; cursor: pointer; transition: all 0.2s; }
+        .filter-tab.active, .filter-tab:hover { background: #4f46e5; color: white; border-color: #4f46e5; }
+        .toolbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .search-box { padding: 8px 14px; border: 1px solid #334155; background: #1e293b; color: #fff; border-radius: 6px; width: 260px; font-size: 13px; }
+        .btn-export { background: #0f172a; border: 1px solid #334155; color: #cbd5e1; padding: 8px 14px; font-size: 13px; border-radius: 6px; font-weight: 600; }
+        .btn-export:hover { background: #1e293b; border-color: #475569; }
+
+        .batch-actions-bar { display: none; align-items: center; gap: 12px; background: #1e1b4b; border: 1px solid #4338ca; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; }
+        .batch-actions-bar span { font-size: 13px; font-weight: 600; color: #a5b4fc; }
+        .btn-secondary { background: #2563eb; padding: 6px 14px; font-size: 13px; border-radius: 6px; border: none; color: white; cursor: pointer; font-weight: 600; }
+        .btn-secondary:hover { background: #1d4ed8; }
+
+        .table-section { margin-top: 25px; }
+        .table-section h2 { font-size: 18px; color: #f8fafc; margin-bottom: 15px; padding-left: 2px; }
+        .table-container { width: 100%; overflow-x: auto; background: #0f172a; border-radius: 8px; border: 1px solid #334155; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 16px 14px; border-bottom: 1px solid #334155; text-align: left; font-size: 14px; vertical-align: middle; color: #f8fafc; }
+        th { background: #1e293b; font-weight: 600; color: #94a3b8; }
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { color: #f8fafc; }
+        .sort-icon { font-size: 10px; margin-left: 5px; opacity: 0.5; }
+
+        .warning-badge { display: inline-flex; align-items: center; gap: 5px; background: #451a03; color: #fbbf24; border: 1px solid #78350f; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 4px; }
+        .margin-safe { font-size: 12px; color: #34d399; font-weight: 600; margin-top: 3px; display: block; }
+        .margin-danger { font-size: 12px; color: #f87171; font-weight: 700; margin-top: 3px; display: block; }
+
+        .strategy-badge { display: inline-flex; align-items: center; gap: 6px; background: #1e1b4b; color: #a5b4fc; border: 1px solid #312e81; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        .strategy-icon { font-size: 14px; }
+        .chart-badge-btn { display: inline-flex; align-items: center; gap: 6px; background: #1e1b4b; color: #818cf8; border: 1px solid #312e81; padding: 4px 10px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-left: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        .chart-badge-btn:hover { background: #4f46e5; color: white; border-color: #4f46e5; }
+
+        .switch { position: relative; display: inline-block; width: 46px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .3s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: #059669; }
+        input:checked + .slider:before { transform: translateX(22px); }
+
+        .btn-success { background: #059669; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .btn-success:hover { background: #047857; }
+        .action-container { display: flex; align-items: center; gap: 10px; }
+        code { background: #334155; padding: 2px 4px; border-radius: 3px; font-size: 12px; color: #e2e8f0; }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+        .modal-card { background: #1e293b; border: 1px solid #334155; width: 750px; max-width: 95%; border-radius: 12px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: fadeIn 0.2s ease; }
+        .modal-card.small { width: 420px; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 12px; }
+        .modal-header h3 { margin: 0; color: #f8fafc; font-size: 18px; }
+        .close-modal { background: none; border: none; font-size: 20px; cursor: pointer; color: #94a3b8; font-weight: bold; padding: 0; }
+        .close-modal:hover { color: #fff; background: none; }
+        .chart-container { position: relative; height: 350px; width: 100%; }
+        .confirm-text { color: #cbd5e1; font-size: 14px; line-height: 1.5; margin-bottom: 20px; }
+        .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .confirm-actions .btn-cancel { background: #334155; padding: 9px 18px; font-size: 13px; }
+        .confirm-actions .btn-cancel:hover { background: #475569; }
+        .confirm-actions .btn-danger { background: #dc2626; padding: 9px 18px; font-size: 13px; }
+        .confirm-actions .btn-danger:hover { background: #b91c1c; }
+        .log-table { width: 100%; font-size: 13px; }
+        .log-table th, .log-table td { padding: 10px; }
+
+        /* Sekcje dedykowane dla Hub All-in-One */
+        .hub-section { display: none; }
+        .hub-section.active { display: block; }
+        .sync-action-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 15px; }
+        .sync-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 20px; text-align: center; }
+        .sync-card h4 { margin-top: 0; color: #818cf8; }
+        .sync-card p { font-size: 13px; color: #94a3b8; margin-bottom: 15px; }
+
+        /* Toasty */
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 3000; display: flex; flex-direction: column; gap: 10px; max-width: 340px; }
+        .toast { background: #1e293b; border: 1px solid #334155; border-left: 4px solid #4f46e5; padding: 13px 16px; border-radius: 8px; color: #f8fafc; font-size: 13px; box-shadow: 0 6px 16px rgba(0,0,0,0.35); animation: toastIn 0.2s ease; }
+        .toast.success { border-left-color: #059669; }
+        .toast.error { border-left-color: #dc2626; }
+        .toast.info { border-left-color: #4f46e5; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+        /* Loading */
+        .spinner { border: 3px solid #334155; border-top-color: #4f46e5; border-radius: 50%; width: 26px; height: 26px; animation: spin 0.7s linear infinite; margin: 0 auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Paginacja */
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 16px; }
+        .pagination button { padding: 6px 16px; font-size: 13px; }
+        .pagination span { color: #94a3b8; font-size: 13px; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Tooltipy pomocnicze */
+        .tooltip-icon { display: inline-flex; align-items: center; color: #a5b4fc; font-size: 12px; font-weight: 600; cursor: help; position: relative; margin-left: 8px; text-decoration: underline dotted; text-underline-offset: 3px; white-space: nowrap; }
+        .tooltip-icon:hover { color: #c7d2fe; }
+        .tooltip-icon:hover::after { content: attr(data-tip); position: absolute; bottom: 135%; left: 0; background: #0f172a; border: 1px solid #4f46e5; color: #f8fafc; padding: 10px 13px; border-radius: 8px; font-size: 12px; font-weight: 400; line-height: 1.4; white-space: normal; width: 250px; z-index: 50; box-shadow: 0 6px 16px rgba(0,0,0,0.4); text-decoration: none; }
+        .tooltip-icon:hover::before { content: ''; position: absolute; bottom: 122%; left: 14px; border: 6px solid transparent; border-top-color: #4f46e5; z-index: 50; }
+        .label-with-tip { display: flex; align-items: center; flex-wrap: wrap; }
+
+        /* Szybki wybór godziny harmonogramu */
+        .time-presets { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .time-preset-btn { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; padding: 7px 14px; font-size: 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .time-preset-btn:hover, .time-preset-btn.active { background: #4f46e5; color: white; border-color: #4f46e5; }
+    </style>
 </head>
 <body>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div id="userBar" style="display:none; background:#1e1b4b; border-bottom:1px solid #4338ca; padding:10px 30px; justify-content:space-between; align-items:center; font-size:13px;">
+        <span id="userBarText" style="color:#c7d2fe;"></span>
+        <div style="display:flex; gap:14px; align-items:center;">
+            <span id="userBarPlan" style="font-weight:700; font-size:11px; padding:3px 9px; border-radius:12px;"></span>
+            <span id="userBarTokeny" style="color:#a5b4fc; font-weight:600; font-size:12px;"></span>
+            <button id="btnAktywujPro" onclick="otworzModalPlanow()" style="display:none; background:#059669; padding:6px 14px; font-size:12px;">💳 <span data-i18n="btn_change_plan"></span></button>
+            <button id="btnPowiadomienia" onclick="przelaczPowiadomienia()" style="position:relative; background:#0f172a; border:1px solid #334155; padding:6px 12px; font-size:14px;">
+                🔔
+                <span id="licznikPowiadomien" style="display:none; position:absolute; top:-6px; right:-6px; background:#dc2626; color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 5px; min-width:16px; text-align:center;"></span>
+            </button>
+            <select id="langSelect" onchange="ustawJezyk(this.value)" style="background:#0f172a; color:#fff; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:600; cursor:pointer;">
+                <option value="pl">🇵🇱 Polski</option>
+                <option value="en">🇬🇧 English</option>
+                <option value="es">🇪🇸 Español</option>
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="fr">🇫🇷 Français</option>
+            </select>
+            <a href="landing.html" id="userBarRegisterLink" data-i18n="register_link" style="display:none; color:#a5b4fc; font-weight:600; text-decoration:none;"></a>
+            <button onclick="wyloguj()" data-i18n="btn_logout" style="background:#334155; padding:6px 14px; font-size:12px;"></button>
+        </div>
+    </div>
+
     <div class="container">
-        <h1>🤖 PriceAI Monitor</h1>
-        <p>Wklej link do produktu konkurencji, a AI przeanalizuje rynek.</p>
-
-        <div class="form-group">
-            <input type="url" id="productUrl" placeholder="https://sklep.pl/produkt-123" required>
-            <input type="number" id="myPrice" placeholder="Twoja obecna cena (zł)">
-            <button onclick="analizujProdukt()">Rozpocznij analizę AI</button>
+        <!-- Nawigacja All-in-One e-Commerce Hub -->
+        <div class="hub-nav">
+            <button class="hub-nav-tab active" data-i18n="nav_repricer" onclick="zmienZakladke('repricer', this)"></button>
+            <button class="hub-nav-tab" data-i18n="nav_orders" onclick="zmienZakladke('zamowienia', this)"></button>
+            <button class="hub-nav-tab" data-i18n="nav_stock" onclick="zmienZakladke('magazyn', this)"></button>
+            <button class="hub-nav-tab" data-i18n="nav_catalog" onclick="zmienZakladke('katalog', this)"></button>
+            <button class="hub-nav-tab" data-i18n="nav_sync" onclick="zmienZakladke('synchronizacja', this)"></button>
         </div>
 
-        <div id="loader" class="loader" style="display: none;">
-            🔍 Bot skanuje stronę konkurencji i pyta AI o strategię...
-        </div>
+        <h1 data-i18n="page_title"></h1>
+        <div class="subtitle" data-i18n="page_subtitle"></div>
 
-        <div id="resultsCard" class="results-card" style="display: none;">
-            <h2>📊 Raport Rynkowy</h2>
-            <div class="info-grid">
-                <div>
-                    <span>Cena konkurencji:</span>
-                    <strong id="competitorPrice">-</strong>
+        <!-- ZAKŁADKA: REPRICER -->
+        <div id="section-repricer" class="hub-section active">
+            <div class="config-panel">
+                <h3 data-i18n="config_title"></h3>
+
+                <div class="crawler-status-box">
+                    <div class="crawler-header">
+                        <div class="crawler-title">
+                            <span data-i18n="crawler_title"></span>
+                            <span class="tooltip-icon" data-i18n="co_to_znaczy" data-i18n-tip="crawler_tip"></span>
+                        </div>
+                        <div class="crawler-badge" id="crawlerStatusBadge" style="background: #475569;">
+                            <span class="crawler-pulse"></span> <span id="crawlerStatusText" data-i18n="crawler_status_disconnected"></span>
+                        </div>
+                    </div>
+                    <p class="crawler-desc" data-i18n="crawler_desc"></p>
                 </div>
-                <div>
-                    <span>Magazyn konkurencji:</span>
-                    <strong id="stockStatus">-</strong>
+
+                <div class="inputs-grid">
+                    <div class="input-group">
+                        <select id="platformaSklepu" onchange="zmienPlatformeSklepu()">
+                            <option value="woocommerce">🛒 WooCommerce</option>
+                            <option value="shopify">🛍️ Shopify</option>
+                            <option value="csv">📄 Inny system (import/eksport CSV)</option>
+                        </select>
+                        <span class="help-text">Wybierz platformę Twojego sklepu. Konkurencja może być z DOWOLNEGO sklepu, niezależnie od tego wyboru.</span>
+                    </div>
+                    <div class="input-group" id="grupaStoreUrl">
+                        <input type="text" id="storeUrl" data-i18n-ph="store_url_ph" placeholder="np. https://twojsklep.pl" value="" autocomplete="off">
+                        <span class="help-text" id="storeUrlHelp" data-i18n="store_url_help"></span>
+                    </div>
+                    <div class="input-group" id="grupaConsumerKey">
+                        <input type="text" id="consumerKey" data-i18n-ph="api_key_ph" placeholder="Consumer Key (ck_...)" value="" autocomplete="off" name="woo_consumer_key_field">
+                        <span class="help-text" id="consumerKeyHelp" data-i18n="api_key_help"></span>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="consumerSecret" data-i18n-ph="woo_secret_ph" placeholder="Consumer Secret (cs_...)" value="" autocomplete="off" name="woo_secret_field_xk92">
+                        <span class="help-text" id="consumerSecretHelp" data-i18n="woo_secret_help"></span>
+                    </div>
+                    <div class="input-group">
+                        <select id="marketScope" onchange="pobierzDane()">
+                            <option value="GLOBAL">🌐 Pełny Zasięg Globalny (Wszystkie Rynki Światowe)</option>
+                            <option value="EU">🇪🇺 Strefa Europejska (Jednolity Rynek UE)</option>
+                            <option value="NA">🌎 Ameryka Północna (US / CA / MX)</option>
+                            <option value="APAC">🌏 Azja i Pacyfik (APAC)</option>
+                        </select>
+                        <span class="help-text" data-i18n="market_scope_help"></span>
+                    </div>
+                    <div class="input-group">
+                        <select id="currency" onchange="updateCurrencySymbol()">
+                            <option value="AUTO">🔀 Auto-Detekcja & Przeliczanie w locie</option>
+                            <option value="PLN">PLN (zł) - Złoty polski</option>
+                            <option value="EUR">EUR (€) - Euro</option>
+                            <option value="USD">USD ($) - Dolar amerykański</option>
+                            <option value="GBP">GBP (£) - Funt brytyjski</option>
+                            <option value="CHF">CHF (CHF) - Frank szwajcarski</option>
+                            <option value="JPY">JPY (¥) - Jen japoński</option>
+                            <option value="CAD">CAD (C$) - Dolar kanadyjski</option>
+                            <option value="AUD">AUD (A$) - Dolar australijski</option>
+                            <option value="SEK">SEK (kr) - Korona szwedzka</option>
+                            <option value="NOK">NOK (kr) - Korona norweska</option>
+                            <option value="DKK">DKK (kr) - Korona duńska</option>
+                            <option value="CZK">CZK (Kč) - Korona czeska</option>
+                            <option value="CNY">CNY (¥) - Juan chiński</option>
+                            <option value="INR">INR (₹) - Rupia indyjska</option>
+                            <option value="BRL">BRL (R$) - Real brazylijski</option>
+                            <option value="MXN">MXN (Mex$) - Peso meksykańskie</option>
+                        </select>
+                        <span class="help-text" data-i18n="currency_help"></span>
+                    </div>
+                </div>
+
+                <div class="inputs-grid" style="margin-top: 15px;">
+                    <div class="input-group">
+                        <label class="label-with-tip" style="font-size: 13px; font-weight: 600; color: #f8fafc; margin-bottom: 6px;">
+                            <span data-i18n="schedule_label"></span>
+                            <span class="tooltip-icon" data-i18n="co_to_znaczy" data-i18n-tip="schedule_tip"></span>
+                        </label>
+                        <input type="time" id="autoRepriceTime" value="06:00">
+                        <div class="time-presets">
+                            <button type="button" class="time-preset-btn" data-i18n="preset_morning" onclick="ustawGodzine('06:00', this)"></button>
+                            <button type="button" class="time-preset-btn" data-i18n="preset_noon" onclick="ustawGodzine('12:00', this)"></button>
+                            <button type="button" class="time-preset-btn" data-i18n="preset_afternoon" onclick="ustawGodzine('18:00', this)"></button>
+                            <button type="button" class="time-preset-btn" data-i18n="preset_evening" onclick="ustawGodzine('22:00', this)"></button>
+                        </div>
+                        <span class="help-text" data-i18n="schedule_help"></span>
+                    </div>
+                    <div class="input-group" style="justify-content: flex-end;">
+                        <div class="global-toggle-row" style="margin-bottom: 0; height: 100%;">
+                            <div>
+                                <div class="global-toggle-info label-with-tip">
+                                    <span data-i18n="daily_auto_title"></span>
+                                    <span class="tooltip-icon" data-i18n="co_to_znaczy" data-i18n-tip="daily_auto_tip"></span>
+                                </div>
+                                <div class="global-toggle-sub" data-i18n="daily_auto_sub"></div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="dailyAutoSyncToggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="help-text" style="margin-top: 8px; margin-bottom: 15px;" data-i18n="schedule_note"></div>
+
+                <div class="global-toggle-row">
+                    <div>
+                        <div class="global-toggle-info label-with-tip">
+                            <span data-i18n="auto_pricing_title"></span>
+                            <span class="tooltip-icon" data-i18n="co_to_znaczy" data-i18n-tip="auto_pricing_tip"></span>
+                        </div>
+                        <div class="global-toggle-sub" data-i18n="auto_pricing_sub"></div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="globalAutoPricing" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="global-toggle-row" style="flex-direction:column; align-items:stretch; gap:12px;">
+                    <div>
+                        <div class="global-toggle-info label-with-tip">
+                            💡 Tryb wyliczania cen
+                            <span class="tooltip-icon" data-tip="AI: pełna analiza modelem językowym (kosztuje token za sugestię). Reguła: darmowe, natychmiastowe wyliczenie matematyczne na bazie ceny konkurencji - bez AI, bez tokenów. Floor Price jest respektowany zawsze, niezależnie od trybu.">(co to znaczy?)</span>
+                        </div>
+                        <div class="global-toggle-sub">Wybierz, czy sugestie cen ma liczyć AI (dokładniejsze, ale zużywa tokeny), czy prosta darmowa reguła.</div>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                        <select id="trybCenowy" onchange="zmienTrybCenowy()" style="flex:1; min-width:220px;">
+                            <option value="AI">🤖 AI (Claude analizuje każdy produkt)</option>
+                            <option value="PROCENT_PONIZEJ_KONKURENCJI">📉 Reguła: % poniżej konkurencji</option>
+                            <option value="DOPASUJ_KONKURENCJE">🎯 Reguła: dopasuj cenę konkurencji</option>
+                        </select>
+                        <div id="wartoscRegulyGrupa" style="display:none; align-items:center; gap:8px;">
+                            <input type="number" id="wartoscReguly" value="5" min="0" max="90" step="0.5" style="width:80px;">
+                            <span style="color:#94a3b8; font-size:13px;">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="global-toggle-row" style="flex-direction:column; align-items:stretch; gap:12px;">
+                    <div>
+                        <div class="global-toggle-info label-with-tip">
+                            🛡️ Domyślny procent Floor Price
+                            <span class="tooltip-icon" data-tip="Floor Price to najniższa cena, poniżej której system nigdy nie zejdzie. To ustawienie dotyczy WSZYSTKICH produktów, chyba że konkretny produkt ma własne, indywidualne ustawienie (edytowalne w tabeli produktów). Przykład: 80% oznacza, że przy cenie 120 zł Floor Price wyniesie 96 zł.">(co to znaczy?)</span>
+                        </div>
+                        <div class="global-toggle-sub">Jeśli różne produkty mają różne marże, ustaw tu bezpieczny procent dla większości, a wąskomarżowe produkty nadpisz indywidualnie w tabeli.</div>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <input type="number" id="floorPriceGlobalny" value="75" min="1" max="99" step="1" style="width:80px;" onchange="zapiszFloorPriceGlobalny()">
+                        <span style="color:#94a3b8; font-size:13px;">% Twojej ceny</span>
+                    </div>
+                </div>
+
+                <div class="import-panel">
+                    <button id="btn-sync" data-i18n="btn_save_config" onclick="importOferty()"></button>
                 </div>
             </div>
 
-            <div class="ai-box">
-                <h3>💡 Rekomendacja AI:</h3>
-                <p id="aiSuggestion">Czekam na dane...</p>
+            <div class="dashboard-grid">
+                <div class="kpi-card">
+                    <div class="kpi-title" data-i18n="kpi_sales_month"></div>
+                    <div class="kpi-value-row"><div class="kpi-value" id="val-sales-m">0.00</div><span id="trend-sales-m"></span></div>
+                    <div class="kpi-sub" data-i18n="kpi_current_period"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title" data-i18n="kpi_profit_month"></div>
+                    <div class="kpi-value-row"><div class="kpi-value" id="val-profit-m">0.00</div><span id="trend-profit-m"></span></div>
+                    <div class="kpi-sub" data-i18n="kpi_current_period"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title" data-i18n="kpi_sales_week"></div>
+                    <div class="kpi-value-row"><div class="kpi-value" id="val-sales-w">0.00</div><span id="trend-sales-w"></span></div>
+                    <div class="kpi-sub" data-i18n="kpi_last_7_days"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-title" data-i18n="kpi_profit_week"></div>
+                    <div class="kpi-value-row"><div class="kpi-value" id="val-profit-w">0.00</div><span id="trend-profit-w"></span></div>
+                    <div class="kpi-sub" data-i18n="kpi_last_7_days"></div>
+                </div>
+            </div>
+
+            <div class="table-section">
+                <h2 data-i18n="table_section_title"></h2>
+
+                <div class="table-toolbar">
+                    <div class="filter-tabs">
+                        <button class="filter-tab active" data-i18n="filter_all" onclick="zmienFiltr('wszystkie', this)"></button>
+                        <button class="filter-tab" data-i18n="filter_attention" onclick="zmienFiltr('uwaga', this)"></button>
+                        <button class="filter-tab" data-i18n="filter_no_suggestion" onclick="zmienFiltr('brak-sugestii', this)"></button>
+                    </div>
+                    <div class="toolbar-right">
+                        <input type="text" id="searchInput" class="search-box" data-i18n-ph="search_ph" placeholder="Szukaj produktu lub EAN..." onkeyup="filtrujProdukty()">
+                        <button class="btn-export" data-i18n="btn_add_product" onclick="otworzModalDodawania()"></button>
+                        <button class="btn-export" data-i18n="btn_export_csv" onclick="eksportujCSV()"></button>
+                    </div>
+                </div>
+
+                <div class="batch-actions-bar" id="batchBar">
+                    <span id="selectedCount">Zaznaczono 0 produktów</span>
+                    <button class="btn-secondary" data-i18n="btn_batch_ai" onclick="generujSugestieAIWsadowo()"></button>
+                    <button class="btn-secondary" data-i18n="btn_batch_auto" onclick="masowoWlaczAuto()"></button>
+                    <button class="btn-success" data-i18n="btn_batch_approve" onclick="masowoZatwierdzCeny()"></button>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="zaznaczWszystkie(this)"></th>
+                                <th class="sortable" onclick="ustawSortowanie('nazwa')"><span data-i18n="th_product"></span><span class="sort-icon" id="sort-nazwa">↕</span></th>
+                                <th data-i18n-title="th_ean_floor_tip"><span data-i18n="th_ean_floor"></span> <span style="color:#818cf8; text-decoration:underline dotted; font-size:11px; font-weight:400;" data-i18n="co_to"></span></th>
+                                <th class="sortable" onclick="ustawSortowanie('twoja_cena')"><span data-i18n="th_your_price"></span><span class="sort-icon" id="sort-twoja_cena">↕</span></th>
+                                <th class="sortable" onclick="ustawSortowanie('cena_konkurencji')"><span data-i18n="th_competitor"></span><span class="sort-icon" id="sort-cena_konkurencji">↕</span></th>
+                                <th class="sortable" onclick="ustawSortowanie('sugerowana_cena')"><span data-i18n="th_suggested_price"></span><span class="sort-icon" id="sort-sugerowana_cena">↕</span></th>
+                                <th data-i18n-title="th_ai_recommendation_tip"><span data-i18n="th_ai_recommendation"></span> <span style="color:#818cf8; text-decoration:underline dotted; font-size:11px; font-weight:400;" data-i18n="co_to"></span></th>
+                                <th data-i18n-title="th_mode_action_tip"><span data-i18n="th_mode_action"></span> <span style="color:#818cf8; text-decoration:underline dotted; font-size:11px; font-weight:400;" data-i18n="co_to"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-oferty">
+                            <tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 40px;" data-i18n="empty_products"></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="paginationBar" style="display: none;">
+                    <button id="btnPrevPage" data-i18n="pagination_prev" onclick="zmienStrone(-1)"></button>
+                    <span id="pageInfo">Strona 1 z 1</span>
+                    <button id="btnNextPage" data-i18n="pagination_next" onclick="zmienStrone(1)"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ZAKŁADKA: ZAMÓWIENIA -->
+        <div id="section-zamowienia" class="hub-section">
+            <div class="table-toolbar" style="margin-bottom: 15px;">
+                <h2 style="color: #f8fafc; margin: 0;" data-i18n="orders_title"></h2>
+                <div class="toolbar-right">
+                    <button class="btn-export" data-i18n="btn_add_order" onclick="otworzModalZamowienia()"></button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="th_order_number"></th>
+                            <th data-i18n="th_client"></th>
+                            <th data-i18n="th_date"></th>
+                            <th data-i18n="th_value"></th>
+                            <th data-i18n="th_status"></th>
+                            <th data-i18n="th_action"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-zamowienia">
+                        <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 40px;" data-i18n="empty_orders"></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ZAKŁADKA: STAN MAGAZYNOWY -->
+        <div id="section-magazyn" class="hub-section">
+            <div class="table-toolbar" style="margin-bottom: 15px;">
+                <h2 style="color: #f8fafc; margin: 0;" data-i18n="stock_title"></h2>
+                <div class="toolbar-right">
+                    <button class="btn-export" data-i18n="btn_add_stock" onclick="otworzModalMagazynu()"></button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="th_stock_product"></th>
+                            <th data-i18n="th_sku"></th>
+                            <th data-i18n="th_qty"></th>
+                            <th data-i18n="th_warehouse"></th>
+                            <th data-i18n="th_stock_status"></th>
+                            <th data-i18n="th_action"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-magazyn">
+                        <tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 40px;" data-i18n="empty_stock"></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ZAKŁADKA: KATALOG PRODUKTÓW -->
+        <div id="section-katalog" class="hub-section">
+            <h2 style="color: #f8fafc;" data-i18n="catalog_title"></h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="th_id"></th>
+                            <th data-i18n="th_product_name"></th>
+                            <th data-i18n="th_category"></th>
+                            <th data-i18n="th_base_price"></th>
+                            <th data-i18n="th_store_status"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="katalog-produktu-tbody">
+                        <tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 30px;" data-i18n="loading_catalog"></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ZAKŁADKA: SZYBKA SYNCHRONIZACJA I AKCJE SKLEPOWE -->
+        <div id="section-synchronizacja" class="hub-section">
+            <h2 style="color: #f8fafc;" data-i18n="sync_title"></h2>
+            <p style="color: #94a3b8; font-size: 14px;" data-i18n="sync_desc"></p>
+
+            <div id="statusHarmonogramuBox" style="display:none; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:16px 18px; margin-bottom:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-weight:600; color:#f8fafc; font-size:14px;">⏰ Automatyczny harmonogram cenowy</span>
+                    <span id="statusHarmonogramuEtykieta" style="font-size:12px; font-weight:700; padding:3px 10px; border-radius:12px;"></span>
+                </div>
+                <div style="background:#1e293b; border-radius:6px; height:8px; overflow:hidden; margin-bottom:6px;">
+                    <div id="statusHarmonogramuPasek" style="background:#4f46e5; height:100%; width:0%; transition:width 0.3s;"></div>
+                </div>
+                <div id="statusHarmonogramuTekst" style="font-size:12px; color:#94a3b8;"></div>
+            </div>
+
+            <div class="sync-action-panel">
+                <div class="sync-card">
+                    <h4 data-i18n="sync_card1_title"></h4>
+                    <p data-i18n="sync_card1_desc"></p>
+                    <button class="btn-success" data-i18n="btn_run_sync" onclick="uruchomPelnaSynchronizacje(this)"></button>
+                </div>
+                <div class="sync-card">
+                    <h4 data-i18n="sync_card2_title"></h4>
+                    <p data-i18n="sync_card2_desc"></p>
+                    <button class="btn-secondary" data-i18n="btn_optimize_db" onclick="optymalizujBaze(this)"></button>
+                </div>
+                <div class="sync-card">
+                    <h4 data-i18n="sync_card3_title"></h4>
+                    <p data-i18n="sync_card3_desc"></p>
+                    <button class="btn-secondary" style="background: #dc2626;" data-i18n="btn_reset_prices" onclick="resetCenBazowych()"></button>
+                </div>
+                <div class="sync-card">
+                    <h4>📄 Import / Eksport CSV</h4>
+                    <p>Uniwersalny sposób na dodanie produktów niezależnie od platformy sklepu. Kolumny: nazwa, ean, twoja_cena, cena_konkurencji, url_konkurencja.</p>
+                    <input type="file" id="plikCsvImport" accept=".csv" style="display:none;" onchange="importujCSV(this)">
+                    <button class="btn-success" onclick="document.getElementById('plikCsvImport').click()">⬆️ Importuj z CSV</button>
+                    <button class="btn-export" style="margin-top:8px; width:100%;" onclick="eksportujCSV()">⬇️ Eksportuj do CSV</button>
+                </div>
             </div>
         </div>
     </div>
 
+    <!-- Modal: porównanie cen -->
+    <div class="modal-overlay" id="historyModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle" data-i18n="modal_compare_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('historyModal').style.display='none'">&times;</button>
+            </div>
+            <div id="podsumowaniePorownania" style="text-align:center; font-size:14px; color:#f8fafc; margin-bottom:14px;"></div>
+            <div class="chart-container">
+                <canvas id="priceHistoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: log zmian ceny -->
+    <div class="modal-overlay" id="logModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="logModalTitle" data-i18n="modal_log_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('logModal').style.display='none'">&times;</button>
+            </div>
+            <div id="logModalBody">
+                <table class="log-table">
+                    <thead><tr><th data-i18n="th_log_date"></th><th data-i18n="th_log_old"></th><th data-i18n="th_log_new"></th><th data-i18n="th_log_source"></th></tr></thead>
+                    <tbody id="logModalTbody"><tr><td colspan="4" style="text-align:center; color:#94a3b8; padding: 20px;" data-i18n="empty_log"></td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: podgląd zmian przed masowym zatwierdzeniem -->
+    <div class="modal-overlay" id="podgladZatwierdzeniaModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>📋 Podgląd zmian cen</h3>
+                <button class="close-modal" onclick="document.getElementById('podgladZatwierdzeniaModal').style.display='none'">&times;</button>
+            </div>
+            <p style="color:#94a3b8; font-size:13px; margin-top:-10px; margin-bottom:14px;">Sprawdź poniższe zmiany przed zatwierdzeniem - ceny zostaną wysłane do sklepu (jeśli produkt jest połączony).</p>
+            <div class="table-container" style="max-height:360px; overflow-y:auto;">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Produkt</th>
+                            <th>Stara cena</th>
+                            <th>Nowa cena</th>
+                            <th>Zmiana</th>
+                        </tr>
+                    </thead>
+                    <tbody id="podgladZatwierdzeniaTbody"></tbody>
+                </table>
+            </div>
+            <div class="confirm-actions" style="margin-top:18px;">
+                <button class="btn-cancel" onclick="document.getElementById('podgladZatwierdzeniaModal').style.display='none'">Anuluj</button>
+                <button class="btn-success" id="podgladZatwierdzeniaBtn">Zatwierdź wszystkie</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: potwierdzenie -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="confirm_title"></h3>
+                <button class="close-modal" onclick="zamknijPotwierdzenie()">&times;</button>
+            </div>
+            <p class="confirm-text" id="confirmText"></p>
+            <div class="confirm-actions">
+                <button class="btn-cancel" data-i18n="btn_cancel" onclick="zamknijPotwierdzenie()"></button>
+                <button class="btn-danger" id="confirmActionBtn" data-i18n="btn_confirm"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: dodawanie produktu -->
+    <div class="modal-overlay" id="addProductModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="modal_add_product_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('addProductModal').style.display='none'">&times;</button>
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newProdNazwa" data-i18n-ph="ph_product_name" placeholder="Nazwa produktu">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newProdEan" data-i18n-ph="ph_ean" placeholder="Kod EAN (opcjonalnie)">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="number" step="0.01" id="newProdTwojaCena" data-i18n-ph="ph_your_price" placeholder="Twoja cena">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="number" step="0.01" id="newProdCenaKonkurencji" data-i18n-ph="ph_competitor_price" placeholder="Cena konkurencji (opcjonalnie)">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newProdUrl" data-i18n-ph="ph_competitor_url" placeholder="Link do oferty konkurencji (opcjonalnie)">
+            </div>
+            <div class="input-group" style="margin-bottom: 18px;">
+                <select id="newProdWaluta">
+                    <option value="PLN">PLN (zł)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="CHF">CHF (CHF)</option>
+                    <option value="JPY">JPY (¥)</option>
+                    <option value="CAD">CAD (C$)</option>
+                    <option value="AUD">AUD (A$)</option>
+                    <option value="SEK">SEK (kr)</option>
+                    <option value="NOK">NOK (kr)</option>
+                    <option value="DKK">DKK (kr)</option>
+                    <option value="CZK">CZK (Kč)</option>
+                    <option value="CNY">CNY (¥)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="BRL">BRL (R$)</option>
+                    <option value="MXN">MXN (Mex$)</option>
+                </select>
+            </div>
+            <div class="input-group" style="margin-bottom: 18px;">
+                <select id="newProdKraj">
+                    <option value="" data-i18n="country_auto"></option>
+                    <option value="pl">🇵🇱 Polska</option>
+                    <option value="de">🇩🇪 Niemcy</option>
+                    <option value="fr">🇫🇷 Francja</option>
+                    <option value="es">🇪🇸 Hiszpania</option>
+                    <option value="it">🇮🇹 Włochy</option>
+                    <option value="nl">🇳🇱 Holandia</option>
+                    <option value="at">🇦🇹 Austria</option>
+                    <option value="be">🇧🇪 Belgia</option>
+                    <option value="pt">🇵🇹 Portugalia</option>
+                    <option value="ie">🇮🇪 Irlandia</option>
+                    <option value="us">🇺🇸 USA</option>
+                    <option value="gb">🇬🇧 Wielka Brytania</option>
+                    <option value="ch">🇨🇭 Szwajcaria</option>
+                    <option value="jp">🇯🇵 Japonia</option>
+                    <option value="ca">🇨🇦 Kanada</option>
+                    <option value="au">🇦🇺 Australia</option>
+                    <option value="se">🇸🇪 Szwecja</option>
+                    <option value="no">🇳🇴 Norwegia</option>
+                    <option value="dk">🇩🇰 Dania</option>
+                    <option value="cz">🇨🇿 Czechy</option>
+                    <option value="cn">🇨🇳 Chiny</option>
+                    <option value="in">🇮🇳 Indie</option>
+                    <option value="br">🇧🇷 Brazylia</option>
+                    <option value="mx">🇲🇽 Meksyk</option>
+                </select>
+                <span class="help-text" data-i18n="country_help"></span>
+            </div>
+            <div class="confirm-actions">
+                <button class="btn-cancel" data-i18n="btn_cancel" onclick="document.getElementById('addProductModal').style.display='none'"></button>
+                <button class="btn-success" data-i18n="btn_add_product_submit" onclick="dodajProdukt()"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: dodawanie zamówienia -->
+    <div class="modal-overlay" id="addOrderModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="modal_add_order_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('addOrderModal').style.display='none'">&times;</button>
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newOrderNumer" data-i18n-ph="ph_order_number" placeholder="Numer zamówienia (np. #ORD-001)">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newOrderKlient" data-i18n-ph="ph_client" placeholder="Klient">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="number" step="0.01" id="newOrderWartosc" data-i18n-ph="ph_order_value" placeholder="Wartość zamówienia">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <select id="newOrderWaluta">
+                    <option value="PLN">PLN (zł)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="CHF">CHF (CHF)</option>
+                    <option value="JPY">JPY (¥)</option>
+                    <option value="CAD">CAD (C$)</option>
+                    <option value="AUD">AUD (A$)</option>
+                    <option value="SEK">SEK (kr)</option>
+                    <option value="NOK">NOK (kr)</option>
+                    <option value="DKK">DKK (kr)</option>
+                    <option value="CZK">CZK (Kč)</option>
+                    <option value="CNY">CNY (¥)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="BRL">BRL (R$)</option>
+                    <option value="MXN">MXN (Mex$)</option>
+                </select>
+            </div>
+            <div class="input-group" style="margin-bottom: 18px;">
+                <select id="newOrderStatus">
+                    <option value="Nowe">Nowe</option>
+                    <option value="Opłacone">Opłacone</option>
+                    <option value="Do wysyłki">Do wysyłki</option>
+                    <option value="Wysłane">Wysłane</option>
+                    <option value="Zrealizowane">Zrealizowane</option>
+                    <option value="Anulowane">Anulowane</option>
+                </select>
+            </div>
+            <div class="confirm-actions">
+                <button class="btn-cancel" data-i18n="btn_cancel" onclick="document.getElementById('addOrderModal').style.display='none'"></button>
+                <button class="btn-success" data-i18n="btn_add_order_submit" onclick="dodajZamowienie()"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: dodawanie pozycji magazynowej -->
+    <div class="modal-overlay" id="addStockModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="modal_add_stock_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('addStockModal').style.display='none'">&times;</button>
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newStockNazwa" data-i18n-ph="ph_stock_name" placeholder="Nazwa produktu">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="text" id="newStockSku" data-i18n-ph="ph_sku" placeholder="SKU / EAN (opcjonalnie)">
+            </div>
+            <div class="input-group" style="margin-bottom: 12px;">
+                <input type="number" id="newStockIlosc" data-i18n-ph="ph_qty" placeholder="Ilość dostępna">
+            </div>
+            <div class="input-group" style="margin-bottom: 18px;">
+                <input type="text" id="newStockMagazyn" data-i18n-ph="ph_warehouse_name" placeholder="Nazwa magazynu (opcjonalnie)">
+            </div>
+            <div class="confirm-actions">
+                <button class="btn-cancel" data-i18n="btn_cancel" onclick="document.getElementById('addStockModal').style.display='none'"></button>
+                <button class="btn-success" data-i18n="btn_add_stock_submit" onclick="dodajPozycjeMagazynu()"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: link konkurencji -->
+    <div class="modal-overlay" id="linkModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="add_link"></h3>
+                <button class="close-modal" onclick="document.getElementById('linkModal').style.display='none'">&times;</button>
+            </div>
+            <div class="input-group" style="margin-bottom: 18px;">
+                <input type="text" id="linkModalInput" data-i18n-ph="enter_competitor_url" placeholder="https://..." autocomplete="off">
+            </div>
+            <div class="confirm-actions">
+                <button class="btn-cancel" data-i18n="btn_cancel" onclick="document.getElementById('linkModal').style.display='none'"></button>
+                <button class="btn-success" data-i18n="btn_confirm" onclick="zapiszLinkKonkurencji()"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: potwierdzenie automatycznie znalezionej konkurencji -->
+    <div class="modal-overlay" id="potwierdzKonkurencjeModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="verify_match_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('potwierdzKonkurencjeModal').style.display='none'">&times;</button>
+            </div>
+            <div id="potwierdzKonkurencjeTresc" style="color:#cbd5e1; font-size:14px; line-height:1.6; margin-bottom:20px;"></div>
+            <div class="confirm-actions">
+                <button class="btn-cancel" data-i18n="reject_match" onclick="document.getElementById('potwierdzKonkurencjeModal').style.display='none'"></button>
+                <button class="btn-success" id="potwierdzKonkurencjeBtn" data-i18n="accept_match"></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="planModal">
+        <div class="modal-card" style="width: 900px;">
+            <div class="modal-header">
+                <h3 data-i18n="plan_modal_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('planModal').style.display='none'">&times;</button>
+            </div>
+            <div style="text-align:center; margin-bottom: 20px;">
+                <button id="btnOkresMc" class="filter-tab active" onclick="ustawOkresPlanu('mc', this)" data-i18n="period_monthly" style="margin-right:8px;"></button>
+                <button id="btnOkresRok" class="filter-tab" onclick="ustawOkresPlanu('rok', this)" data-i18n="period_yearly"></button>
+            </div>
+            <div id="planyLista" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;">
+                <div style="text-align:center; padding: 30px; grid-column: 1/-1;"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kreator Pierwszego Uruchomienia -->
+    <div class="modal-overlay" id="onboardingModal">
+        <div class="modal-card" style="width: 560px;">
+            <div class="modal-header">
+                <h3 id="onboardingTytul">Witaj w PriceAI Cloud 👋</h3>
+                <button class="close-modal" onclick="pomijOnboarding()">&times;</button>
+            </div>
+            <div id="onboardingTresc" style="color:#cbd5e1; font-size:14px; line-height:1.7; min-height:180px;"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px;">
+                <button class="btn-cancel" onclick="pomijOnboarding()" style="font-size:13px; padding:9px 16px;">Pomiń kreator</button>
+                <div style="display:flex; gap:10px;">
+                    <button id="onboardingWstecz" class="btn-cancel" onclick="onboardingKrok(-1)" style="font-size:13px; padding:9px 16px; display:none;">← Wstecz</button>
+                    <button id="onboardingDalej" class="btn-success" onclick="onboardingKrok(1)" style="font-size:13px; padding:9px 18px;">Dalej →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Powiadomień -->
+    <div id="panelPowiadomien" style="display:none; position:fixed; top:60px; right:24px; width:380px; max-width:90vw; max-height:70vh; background:#1e293b; border:1px solid #334155; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.5); z-index:950; flex-direction:column; overflow:hidden;">
+        <div style="background:#0f172a; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155;">
+            <span style="font-weight:700; color:#f8fafc; font-size:14px;">🔔 Powiadomienia</span>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <button onclick="oznaczWszystkiePowiadomieniaJakoPrzeczytane()" style="background:none; padding:0; font-size:11px; color:#818cf8; text-decoration:underline;">Oznacz wszystkie</button>
+                <button onclick="przelaczPowiadomienia()" style="background:none; padding:0; font-size:18px; color:#94a3b8;">&times;</button>
+            </div>
+        </div>
+        <div id="listaPowiadomien" style="flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px; font-size:13px;"></div>
+    </div>
+
+    <!-- Asystent Pomocy AI -->
+    <button id="btnAsystent" onclick="przelaczAsystenta()" style="position:fixed; bottom:24px; right:24px; width:58px; height:58px; border-radius:50%; background:#4f46e5; box-shadow:0 6px 20px rgba(79,70,229,0.5); font-size:24px; z-index:900; padding:0;">🤖</button>
+
+    <div id="panelAsystenta" style="display:none; position:fixed; bottom:96px; right:24px; width:360px; max-width:90vw; height:480px; background:#1e293b; border:1px solid #334155; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.5); z-index:900; flex-direction:column; overflow:hidden;">
+        <div style="background:#0f172a; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155;">
+            <span style="font-weight:700; color:#f8fafc; font-size:14px;">🤖 <span data-i18n="assistant_title"></span></span>
+            <button onclick="przelaczAsystenta()" style="background:none; padding:0; font-size:18px; color:#94a3b8;">&times;</button>
+        </div>
+        <div id="wiadomosciAsystenta" style="flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; font-size:13px;"></div>
+        <div style="padding:12px; border-top:1px solid #334155; display:flex; gap:8px;">
+            <input type="text" id="inputAsystenta" data-i18n-ph="assistant_placeholder" placeholder="Zapytaj o cokolwiek..." style="flex:1; padding:9px 12px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#fff; font-size:13px;" onkeypress="if(event.key==='Enter') wyslijPytanieAsystentowi()">
+            <button onclick="wyslijPytanieAsystentowi()" style="padding:9px 16px; font-size:13px;">➤</button>
+        </div>
+    </div>
+
+    <script src="i18n.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

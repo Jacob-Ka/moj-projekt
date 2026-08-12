@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Polityka Prywatności - PriceAI Cloud</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; line-height: 1.7; }
+        .wrap { max-width: 780px; margin: 0 auto; padding: 50px 24px 100px; }
+        a { color: #818cf8; }
+        h1 { color: #f8fafc; font-size: 28px; margin-bottom: 6px; }
+        .updated { color: #64748b; font-size: 13px; margin-bottom: 36px; }
+        h2 { color: #f8fafc; font-size: 18px; margin-top: 36px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+        p, li { color: #cbd5e1; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #334155; color: #cbd5e1; }
+        th { color: #94a3b8; font-weight: 600; }
+        .disclaimer { background: #1e1b4b; border: 1px solid #4338ca; border-radius: 10px; padding: 16px 20px; font-size: 13px; color: #a5b4fc; margin-bottom: 30px; }
+        .back { display: inline-block; margin-bottom: 24px; color: #94a3b8; font-size: 13px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <a href="landing.html" class="back">← Wróć do strony głównej</a>
+        <h1>Polityka Prywatności</h1>
+        <div class="updated">Ostatnia aktualizacja: 11 sierpnia 2026</div>
+
+        <div class="disclaimer">
+            Ten dokument to szkic startowy przygotowany jako punkt wyjścia, nie porada prawna. Przed rozpoczęciem realnego przetwarzania danych klientów zalecana jest weryfikacja przez prawnika specjalizującego się w RODO/GDPR.
+        </div>
+
+        <h2>1. Administrator danych</h2>
+        <p>Administratorem danych osobowych przetwarzanych w związku z korzystaniem z PriceAI Cloud jest [Imię i nazwisko / nazwa działalności, adres, NIP], kontakt: [adres e-mail kontaktowy].</p>
+
+        <h2>2. Jakie dane zbieramy</h2>
+        <table>
+            <tr><th>Kategoria danych</th><th>Przykład</th><th>Cel</th></tr>
+            <tr><td>Dane konta</td><td>Adres e-mail, hasło (przechowywane w formie zahaszowanej, nigdy jawnym tekstem)</td><td>Logowanie, identyfikacja konta</td></tr>
+            <tr><td>Dane integracji sklepowej</td><td>Adres sklepu, klucze API WooCommerce/Shopify</td><td>Import produktów, wysyłanie zaktualizowanych cen</td></tr>
+            <tr><td>Dane produktowe</td><td>Nazwy produktów, ceny, kody EAN wprowadzone przez Użytkownika</td><td>Świadczenie usługi repricingu</td></tr>
+            <tr><td>Adres IP</td><td>Adres IP zapytania</td><td>Automatyczne wykrywanie kraju/waluty rynku, ograniczanie nadużyć (rate limiting)</td></tr>
+            <tr><td>Dane techniczne</td><td>Logi zapytań, historia zmian cen</td><td>Diagnostyka, historia działania usługi</td></tr>
+        </table>
+
+        <h2>3. Podstawa prawna przetwarzania</h2>
+        <p>Dane przetwarzane są na podstawie: (a) wykonania umowy o świadczenie usługi (art. 6 ust. 1 lit. b RODO) - dane konta i integracji; (b) prawnie uzasadnionego interesu Administratora (art. 6 ust. 1 lit. f RODO) - zapobieganie nadużyciom, diagnostyka techniczna; (c) zgody Użytkownika, tam gdzie jest wymagana.</p>
+
+        <h2>4. Komu udostępniamy dane</h2>
+        <p>W celu świadczenia usługi dane mogą być przekazywane następującym kategoriom odbiorców:</p>
+        <ul>
+            <li><strong>Anthropic (dostawca modelu AI Claude)</strong> - fragmenty danych produktowych (nazwa, cena) przekazywane w celu wygenerowania sugestii cenowej.</li>
+            <li><strong>Serper.dev, SerpApi, Allegro, Shopify</strong> - w zakresie niezbędnym do wyszukiwania cen konkurencji i integracji sklepowej.</li>
+            <li><strong>Dostawca hostingu</strong> - w zakresie niezbędnym do utrzymania infrastruktury serwisu.</li>
+        </ul>
+        <p>Dane osobowe nie są sprzedawane ani udostępniane w celach marketingowych podmiotom trzecim.</p>
+
+        <h2>5. Okres przechowywania danych</h2>
+        <p>Dane przechowywane są przez czas trwania konta Użytkownika. Po usunięciu konta dane są trwale usuwane w rozsądnym terminie, z wyjątkiem danych, których przechowywanie wymagane jest przepisami prawa (np. dokumenty rozliczeniowe).</p>
+
+        <h2>6. Prawa Użytkownika</h2>
+        <p>Zgodnie z RODO, Użytkownikowi przysługuje prawo do: dostępu do swoich danych, ich sprostowania, usunięcia ("prawo do bycia zapomnianym"), ograniczenia przetwarzania, przenoszenia danych oraz wniesienia sprzeciwu wobec przetwarzania. W celu realizacji tych praw prosimy o kontakt: [adres e-mail kontaktowy]. Użytkownikowi przysługuje również prawo wniesienia skargi do Prezesa Urzędu Ochrony Danych Osobowych (UODO).</p>
+
+        <h2>7. Bezpieczeństwo danych</h2>
+        <p>Hasła przechowywane są w formie zahaszowanej (bcrypt), nigdy jako czysty tekst. Klucze API do sklepów Użytkowników wykorzystywane są wyłącznie do świadczenia usługi i nie są udostępniane osobom trzecim poza wskazanymi w pkt. 4.</p>
+
+        <h2>8. Pliki cookies</h2>
+        <p>Serwis wykorzystuje niezbędne pliki cookies do utrzymania sesji zalogowanego Użytkownika. Nie wykorzystujemy cookies do celów reklamowych ani śledzenia poza Serwisem.</p>
+
+        <h2>9. Kontakt</h2>
+        <p>W sprawach dotyczących ochrony danych osobowych prosimy o kontakt: [adres e-mail kontaktowy].</p>
+    </div>
+</body>
+</html>
