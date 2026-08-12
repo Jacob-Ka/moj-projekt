@@ -39,7 +39,17 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     wget \
     xdg-utils \
+    python3 \
+    make \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
+
+# WYMUSZAMY zbudowanie sqlite3 OD ZERA na tym konkretnym systemie, zamiast
+# pobierania gotowego, wcześniej skompilowanego pliku - ten gotowy plik był
+# zbudowany dla nowszej wersji glibc niż ma ten obraz (stąd błąd
+# "GLIBC_2.38 not found"). Budowanie od zera wymaga python3/make/g++
+# (zainstalowane wyżej) - z tym gwarantujemy dopasowanie do TEGO systemu.
+ENV npm_config_build_from_source=true
 
 # Instalujemy zależności PRZED skopiowaniem reszty kodu - Docker cache'uje
 # ten krok, więc kolejne wdrożenia (gdy zmienia się tylko kod, nie
