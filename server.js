@@ -768,6 +768,16 @@ app.get('/api/plany', (req, res) => {
 // płatności jeszcze nie ma. Dostępne tylko dla zarejestrowanych kont (nie DEMO),
 // żeby przetestować jak zachowuje się aplikacja z różnymi limitami.
 app.post('/api/plan/aktywuj', wymagajSesji, (req, res) => {
+    // BEZPIECZNIK: bez tego, KAŻDY zalogowany użytkownik (nie tylko Ty)
+    // mógłby aktywować dowolny płatny plan - łącznie z Enterprise (300 000
+    // tokenów AI) - bez płacenia ani grosza, realnie zjadając Twój budżet u
+    // Anthropic. Domyślnie WYŁĄCZONE (bezpieczne po wdrożeniu) - włączasz to
+    // TYLKO lokalnie, do własnych testów, ustawiając w .env:
+    // POZWOL_TESTOWA_AKTYWACJE_PLANOW=true
+    // Docelowo ten cały endpoint zastąpi prawdziwa integracja ze Stripe.
+    if (process.env.POZWOL_TESTOWA_AKTYWACJE_PLANOW !== 'true') {
+        return res.status(403).json({ success: false, error: 'Płatności online będą dostępne wkrótce. Skontaktuj się bezpośrednio, żeby aktywować plan już teraz.' });
+    }
     if (req.session.isGuest) {
         return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto, aby przetestować płatne plany.' });
     }
@@ -784,6 +794,50 @@ app.post('/api/plan/aktywuj', wymagajSesji, (req, res) => {
             res.json({ success: true, plan, tokeny_ai: limity.tokeny, limit_produktow: limity.produkty });
         }
     );
+});
+
+// ============== RĘCZNE NADANIE PLANU (dla Ciebie, nie dla klientów) ==============
+// To jest bezpieczny sposób, żeby dać testerowi/pierwszym klientom darmowy
+// dostęp do płatnego planu, ZANIM podłączysz prawdziwe płatności (Stripe).
+// Chronione osobnym, sekretnym kluczem (ADMIN_SECRET w .env) - NIE sesją
+// logowania, więc działa nawet bez zalogowania na konto klienta. Bez
+// ustawionego ADMIN_SECRET w zmiennych środowiskowych ten endpoint jest
+// całkowicie wyłączony (zwraca 403), więc jeśli zapomnisz go ustawić na
+// Railway, nic złego się nie stanie - po prostu nie będzie działać.
+app.post('/api/admin/nadaj-plan', (req, res) => {
+    if (!process.env.ADMIN_SECRET) {
+        return res.status(403).json({ success: false, error: 'Ta funkcja jest wyłączona (brak ADMIN_SECRET w zmiennych środowiskowych).' });
+    }
+    const { sekret, email, plan } = req.body;
+    if (!sekret || typeof sekret !== 'string') {
+        return res.status(403).json({ success: false, error: 'Brak klucza dostępu.' });
+    }
+    // Porównanie w stałym czasie - żeby nie dało się zgadnąć klucza po tym,
+    // ile milisekund trwa odpowiedź serwera (atak "timing attack").
+    const podanyBuf = Buffer.from(sekret);
+    const prawdziwyBuf = Buffer.from(process.env.ADMIN_SECRET);
+    const pasujeDlugosc = podanyBuf.length === prawdziwyBuf.length;
+    const pasuje = pasujeDlugosc && crypto.timingSafeEqual(podanyBuf, prawdziwyBuf);
+    if (!pasuje) {
+        return res.status(403).json({ success: false, error: 'Nieprawidłowy klucz dostępu.' });
+    }
+    if (!email) return res.status(400).json({ success: false, error: 'Podaj email użytkownika.' });
+    if (!PLANY_PLATNE.includes(plan) && plan !== 'FREE') {
+        return res.status(400).json({ success: false, error: 'Nieznany plan.' });
+    }
+
+    db.get(`SELECT id FROM users WHERE email = ?`, [String(email).toLowerCase().trim()], (err, user) => {
+        if (err || !user) return res.status(404).json({ success: false, error: 'Nie znaleziono użytkownika o tym mailu - musi mieć już założone konto.' });
+        const limity = LIMITY_PLANOW[plan];
+        db.run(
+            `UPDATE limity_uzytkownika SET plan = ?, tokeny_ai = ?, limit_produktow = ? WHERE user_id = ?`,
+            [plan, limity.tokeny, limity.produkty, String(user.id)],
+            (err) => {
+                if (err) return res.status(500).json({ success: false, error: 'Błąd nadawania planu.' });
+                res.json({ success: true, email, plan, tokeny_ai: limity.tokeny, limit_produktow: limity.produkty });
+            }
+        );
+    });
 });
 
 // ============== INTEGRACJA Z PRAWDZIWYM SKLEPEM (WooCommerce) ==============

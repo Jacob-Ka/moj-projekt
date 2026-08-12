@@ -1,0 +1,7 @@
+node_modules
+.env
+.env.local
+.git
+.gitignore
+baza_global.db
+npm-debug.log
