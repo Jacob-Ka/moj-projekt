@@ -308,22 +308,31 @@ const PLANY_PLATNE = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE']; // p
 // pakietów, tym mniej okazji do podobnych niespodzianek), a Stripe API jest
 // wystarczająco proste, żeby nie potrzebować oficjalnego SDK.
 
-// Mapa: nazwa naszego planu -> ID ceny (Price ID) w Stripe. Te ID musisz
-// samodzielnie założyć w Stripe Dashboard (Produkty -> Dodaj cenę,
-// cykliczna, miesięczna, w PLN) i wkleić do zmiennych środowiskowych.
+// Mapa: nazwa naszego planu -> ID cen (Price ID) w Stripe, OSOBNO dla
+// rozliczenia miesięcznego i rocznego. Wcześniej istniała tylko wersja
+// miesięczna - klient mógł wybrać w interfejsie "Rocznie", zobaczyć niższą
+// cenę (490 zł zamiast 12x49 zł), ale po kliknięciu "Wybierz" i tak
+// naliczyłaby się cena MIESIĘCZNA, bo żadna cena roczna nigdy nie istniała
+// w Stripe. To realna niespójność między tym, co reklamowaliśmy, a tym, za
+// co naliczylibyśmy - naprawione przez osobne ceny roczne. Wszystkie 10 ID
+// (5 planów x 2 okresy) musisz samodzielnie założyć w Stripe Dashboard.
 const STRIPE_PRICE_ID = {
-    STARTER: process.env.STRIPE_PRICE_STARTER,
-    PRO: process.env.STRIPE_PRICE_PRO,
-    BUSINESS: process.env.STRIPE_PRICE_BUSINESS,
-    SCALE: process.env.STRIPE_PRICE_SCALE,
-    ENTERPRISE: process.env.STRIPE_PRICE_ENTERPRISE
+    STARTER: { mc: process.env.STRIPE_PRICE_STARTER, rok: process.env.STRIPE_PRICE_STARTER_ROK },
+    PRO: { mc: process.env.STRIPE_PRICE_PRO, rok: process.env.STRIPE_PRICE_PRO_ROK },
+    BUSINESS: { mc: process.env.STRIPE_PRICE_BUSINESS, rok: process.env.STRIPE_PRICE_BUSINESS_ROK },
+    SCALE: { mc: process.env.STRIPE_PRICE_SCALE, rok: process.env.STRIPE_PRICE_SCALE_ROK },
+    ENTERPRISE: { mc: process.env.STRIPE_PRICE_ENTERPRISE, rok: process.env.STRIPE_PRICE_ENTERPRISE_ROK }
 };
 // Odwrotna mapa (ID ceny -> nazwa planu) - potrzebna w webhookach, gdzie
 // Stripe mówi nam "subskrypcja korzysta z tej ceny", a my musimy wiedzieć,
-// KTÓRY to nasz plan. Budowana raz, przy starcie serwera.
+// KTÓRY to nasz plan. Obejmuje TERAZ obie ceny (miesięczną i roczną) każdego
+// planu - dzięki temu rozpoznanie planu w webhooku działa niezależnie od
+// tego, na jaki okres klient się zapisał. Budowana raz, przy starcie
+// serwera.
 const STRIPE_PLAN_PO_CENIE = {};
-for (const [plan, priceId] of Object.entries(STRIPE_PRICE_ID)) {
-    if (priceId) STRIPE_PLAN_PO_CENIE[priceId] = plan;
+for (const [plan, ceny] of Object.entries(STRIPE_PRICE_ID)) {
+    if (ceny.mc) STRIPE_PLAN_PO_CENIE[ceny.mc] = plan;
+    if (ceny.rok) STRIPE_PLAN_PO_CENIE[ceny.rok] = plan;
 }
 
 // Wspólna funkcja do wywołań Stripe REST API. Stripe oczekuje danych w
@@ -913,13 +922,17 @@ app.post('/api/stripe/checkout', wymagajSesji, async (req, res) => {
     if (req.session.isGuest) {
         return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto, aby wykupić płatny plan.' });
     }
-    const { plan } = req.body;
+    const { plan, okres } = req.body;
     if (!PLANY_PLATNE.includes(plan)) {
         return res.status(400).json({ success: false, error: 'Nieznany plan.' });
     }
-    const priceId = STRIPE_PRICE_ID[plan];
+    // Domyślnie miesięcznie, jeśli front-end z jakiegoś powodu nie przesłał
+    // okresu - bezpieczny wybór, bo cena miesięczna zawsze powinna istnieć.
+    const wybranyOkres = okres === 'rok' ? 'rok' : 'mc';
+    const priceId = STRIPE_PRICE_ID[plan]?.[wybranyOkres];
     if (!priceId) {
-        return res.status(503).json({ success: false, error: `Płatności dla planu ${plan} nie są jeszcze skonfigurowane.` });
+        const nazwaOkresu = wybranyOkres === 'rok' ? 'roczne' : 'miesięczne';
+        return res.status(503).json({ success: false, error: `Płatności ${nazwaOkresu} dla planu ${plan} nie są jeszcze skonfigurowane.` });
     }
 
     try {

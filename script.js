@@ -329,10 +329,17 @@ function renderujPlany(cennik) {
 }
 
 async function aktywujPlan(nazwa) {
+    // WAŻNE: przekazujemy TERAZ, na jaki okres rozliczeniowy klient patrzył
+    // (okresPlanu - zmienna sterująca zakładkami "Miesięcznie"/"Rocznie" w
+    // tym samym modalu) - wcześniej tego nie robiliśmy, więc kliknięcie
+    // "Wybierz" ZAWSZE tworzyło subskrypcję miesięczną, nawet gdy klient
+    // patrzył akurat na cenę roczną. Teraz backend dostaje jednoznaczną
+    // informację, którą z dwóch cen (miesięczną czy roczną) faktycznie
+    // wybrać.
     const data = await apiFetch('/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: nazwa })
+        body: JSON.stringify({ plan: nazwa, okres: okresPlanu })
     });
     if (data?.success && data.url) {
         // Przekierowanie na hostowaną przez Stripe stronę płatności - nie
