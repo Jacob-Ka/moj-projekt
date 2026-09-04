@@ -29,6 +29,7 @@ const apiFetch = async (url, options = {}) => {
 
 document.addEventListener('DOMContentLoaded', () => {
     sprawdzSesje();
+    obslugaPowrotuZeStripe();
 });
 
 async function sprawdzSesje() {
@@ -299,6 +300,12 @@ function renderujPlany(cennik) {
     const kontener = document.getElementById('planyLista');
     if (!kontener || !cennik) return;
 
+    const planyPlatne = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
+    const wrapperSubskrypcji = document.getElementById('zarzadzajSubskrypcjaWrapper');
+    if (wrapperSubskrypcji) {
+        wrapperSubskrypcji.style.display = planyPlatne.includes(window.planUzytkownika) ? 'block' : 'none';
+    }
+
     const kolejnosc = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
     kontener.innerHTML = kolejnosc.map(nazwa => {
         const p = cennik[nazwa];
@@ -322,17 +329,44 @@ function renderujPlany(cennik) {
 }
 
 async function aktywujPlan(nazwa) {
-    const data = await apiFetch('/plan/aktywuj', {
+    const data = await apiFetch('/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: nazwa })
     });
-    if (data?.success) {
-        pokazToast(`${t('pro_activated')} (${nazwa})`, 'success');
-        document.getElementById('planModal').style.display = 'none';
-        sprawdzSesje();
+    if (data?.success && data.url) {
+        // Przekierowanie na hostowaną przez Stripe stronę płatności - nie
+        // ma tu żadnej "aktywacji" po naszej stronie w tym momencie, to
+        // nastąpi dopiero po prawdziwej płatności, przez webhook.
+        window.location.href = data.url;
     } else {
         pokazToast(data?.error || t('ai_error'), 'error');
+    }
+}
+
+async function zarzadzajSubskrypcja() {
+    const data = await apiFetch('/stripe/portal', { method: 'POST' });
+    if (data?.success && data.url) {
+        window.location.href = data.url;
+    } else {
+        pokazToast(data?.error || t('ai_error'), 'error');
+    }
+}
+
+// Po powrocie ze Stripe (udana płatność albo rezygnacja) - pokazujemy
+// odpowiedni komunikat i czyścimy adres URL, żeby odświeżenie strony nie
+// pokazywało tego samego toasta w kółko.
+function obslugaPowrotuZeStripe() {
+    const parametry = new URLSearchParams(window.location.search);
+    const wynikCheckoutu = parametry.get('checkout');
+    if (wynikCheckoutu === 'success') {
+        pokazToast(t('checkout_success_msg'), 'success');
+        sprawdzSesje();
+    } else if (wynikCheckoutu === 'cancelled') {
+        pokazToast(t('checkout_cancelled_msg'), 'info');
+    }
+    if (wynikCheckoutu) {
+        window.history.replaceState({}, document.title, window.location.pathname);
     }
 }
 

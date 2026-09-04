@@ -175,7 +175,16 @@ function sprawdzDziennyLimit(req, res, next) {
 
 app.set('trust proxy', 1);
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+// UWAGA: endpoint webhooka Stripe (/api/stripe/webhook) MUSI dostać
+// wiadomość w postaci surowej (niesparsowanej), bo weryfikacja podpisu
+// liczona jest z dokładnych, oryginalnych bajtów - nawet jedna zmieniona
+// spacja po sparsowaniu na JSON i z powrotem zepsułaby podpis. Dlatego
+// globalny parser JSON świadomie POMIJA tę jedną ścieżkę - webhook dostaje
+// własny, "surowy" parser bezpośrednio przy definicji trasy niżej.
+app.use((req, res, next) => {
+    if (req.originalUrl === '/api/stripe/webhook') return next();
+    express.json()(req, res, next);
+});
 // Serwuje pliki front-endu (index.html, script.js, landing.html, i18n.js
 // itd.) bezpośrednio z tego samego serwera - jeden proces, jeden adres,
 // zamiast osobnego Live Server na innym porcie. Dzięki temu front-end i
@@ -291,6 +300,94 @@ const LIMITY_PLANOW = {
     }
 };
 const PLANY_PLATNE = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE']; // plany mozliwe do "kupienia" (na razie testowo, bez realnej platnosci
+
+// ============== INTEGRACJA STRIPE (prawdziwe płatności) ==============
+// Świadomie BEZ pakietu npm "stripe" - to zwykłe wywołania REST przez
+// wbudowany fetch(). Mniej zależności do zainstalowania/skompilowania przy
+// wdrożeniu (pamiętasz kłopoty z sqlite3/GLIBC - im mniej natywnych
+// pakietów, tym mniej okazji do podobnych niespodzianek), a Stripe API jest
+// wystarczająco proste, żeby nie potrzebować oficjalnego SDK.
+
+// Mapa: nazwa naszego planu -> ID ceny (Price ID) w Stripe. Te ID musisz
+// samodzielnie założyć w Stripe Dashboard (Produkty -> Dodaj cenę,
+// cykliczna, miesięczna, w PLN) i wkleić do zmiennych środowiskowych.
+const STRIPE_PRICE_ID = {
+    STARTER: process.env.STRIPE_PRICE_STARTER,
+    PRO: process.env.STRIPE_PRICE_PRO,
+    BUSINESS: process.env.STRIPE_PRICE_BUSINESS,
+    SCALE: process.env.STRIPE_PRICE_SCALE,
+    ENTERPRISE: process.env.STRIPE_PRICE_ENTERPRISE
+};
+// Odwrotna mapa (ID ceny -> nazwa planu) - potrzebna w webhookach, gdzie
+// Stripe mówi nam "subskrypcja korzysta z tej ceny", a my musimy wiedzieć,
+// KTÓRY to nasz plan. Budowana raz, przy starcie serwera.
+const STRIPE_PLAN_PO_CENIE = {};
+for (const [plan, priceId] of Object.entries(STRIPE_PRICE_ID)) {
+    if (priceId) STRIPE_PLAN_PO_CENIE[priceId] = plan;
+}
+
+// Wspólna funkcja do wywołań Stripe REST API. Stripe oczekuje danych w
+// formacie application/x-www-form-urlencoded (nie JSON!), z zagnieżdżonymi
+// obiektami zapisanymi jako "rodzic[dziecko]" - stąd ta funkcja pomocnicza
+// spłaszczająca zagnieżdżone obiekty do właściwego formatu.
+function splaszczDoParametrowStripe(dane, prefiks = '') {
+    const wynik = [];
+    for (const [klucz, wartosc] of Object.entries(dane)) {
+        if (wartosc === undefined || wartosc === null) continue;
+        const pelnyKlucz = prefiks ? `${prefiks}[${klucz}]` : klucz;
+        if (typeof wartosc === 'object' && !Array.isArray(wartosc)) {
+            wynik.push(...splaszczDoParametrowStripe(wartosc, pelnyKlucz));
+        } else {
+            wynik.push([pelnyKlucz, String(wartosc)]);
+        }
+    }
+    return wynik;
+}
+
+async function stripeApi(endpoint, dane) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+        throw new Error('Brak STRIPE_SECRET_KEY w zmiennych środowiskowych - płatności są wyłączone.');
+    }
+    const params = new URLSearchParams(splaszczDoParametrowStripe(dane));
+    const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params.toString()
+    });
+    const wynik = await res.json();
+    if (!res.ok) {
+        throw new Error(wynik?.error?.message || `Błąd Stripe API (${res.status})`);
+    }
+    return wynik;
+}
+
+// Weryfikacja podpisu webhooka Stripe RĘCZNIE (bez SDK) - Stripe podpisuje
+// każde wywołanie webhooka kluczem STRIPE_WEBHOOK_SECRET, żeby nikt obcy nie
+// mógł podszyć się pod nich i np. samemu sobie "aktywować" płatny plan
+// wysyłając fałszywe zdarzenie na nasz endpoint. Nagłówek ma format
+// "t=<znacznik czasu>,v1=<podpis>".
+function zweryfikujPodpisStripe(surowyBody, naglowekSygnatury, sekret) {
+    if (!naglowekSygnatury) return false;
+    const czesci = Object.fromEntries(naglowekSygnatury.split(',').map(cz => cz.split('=')));
+    const { t: znacznikCzasu, v1: podpis } = czesci;
+    if (!znacznikCzasu || !podpis) return false;
+    const oczekiwany = crypto
+        .createHmac('sha256', sekret)
+        .update(`${znacznikCzasu}.${surowyBody}`, 'utf8')
+        .digest('hex');
+    const a = Buffer.from(podpis);
+    const b = Buffer.from(oczekiwany);
+    if (a.length !== b.length) return false;
+    if (!crypto.timingSafeEqual(a, b)) return false;
+    // Odrzucamy zdarzenia starsze niż 5 minut - chroni to przed atakiem
+    // "replay" (ktoś przechwytuje i ponownie wysyła stary, prawdziwy
+    // webhook, licząc że system go jeszcze raz przetworzy).
+    const wiekSekundy = Math.abs(Date.now() / 1000 - Number(znacznikCzasu));
+    return wiekSekundy <= 300;
+}
 
 // CAŁY blok tworzenia tabel i migracji (poniżej) jest opakowany w
 // db.serialize() - bez tego sterownik sqlite3 NIE gwarantuje kolejności
@@ -564,6 +661,17 @@ db.run(`ALTER TABLE zamowienia ADD COLUMN zewnetrzny_id TEXT`, (err) => {
 db.run(`ALTER TABLE users ADD COLUMN regulamin_zaakceptowano TEXT`, (err) => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Migracja regulamin_zaakceptowano:', err.message);
 });
+// stripe_customer_id/stripe_subscription_id: identyfikatory po stronie
+// Stripe, potrzebne żeby wiedzieć KTÓRY klient Stripe odpowiada któremu
+// naszemu użytkownikowi (przy webhookach) i żeby móc otworzyć mu Customer
+// Portal (zarządzanie subskrypcją/płatnością) bez proszenia go o dane karty
+// ponownie.
+db.run(`ALTER TABLE users ADD COLUMN stripe_customer_id TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja stripe_customer_id:', err.message);
+});
+db.run(`ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja stripe_subscription_id:', err.message);
+});
 }); // koniec db.serialize() dla tworzenia tabel i migracji
 
 // UWAGA: ta funkcja MUSI być zdefiniowana na poziomie globalnym pliku (poza
@@ -794,6 +902,202 @@ app.post('/api/plan/aktywuj', wymagajSesji, (req, res) => {
             res.json({ success: true, plan, tokeny_ai: limity.tokeny, limit_produktow: limity.produkty });
         }
     );
+});
+
+// ============== PRAWDZIWE PŁATNOŚCI (Stripe) ==============
+// Krok 1: klient klika "Wybierz plan" -> tworzymy sesję Stripe Checkout ->
+// przekierowujemy go na stronę płatności hostowaną przez Stripe (nie
+// zbieramy numerów kart samodzielnie - to obniża wymogi bezpieczeństwa po
+// naszej stronie, bo dane karty nigdy nie dotykają naszego serwera).
+app.post('/api/stripe/checkout', wymagajSesji, async (req, res) => {
+    if (req.session.isGuest) {
+        return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto, aby wykupić płatny plan.' });
+    }
+    const { plan } = req.body;
+    if (!PLANY_PLATNE.includes(plan)) {
+        return res.status(400).json({ success: false, error: 'Nieznany plan.' });
+    }
+    const priceId = STRIPE_PRICE_ID[plan];
+    if (!priceId) {
+        return res.status(503).json({ success: false, error: `Płatności dla planu ${plan} nie są jeszcze skonfigurowane.` });
+    }
+
+    try {
+        const user = await dbGetAsync(`SELECT email, stripe_customer_id FROM users WHERE id = ?`, [req.session.userId]);
+        if (!user) return res.status(404).json({ success: false, error: 'Nie znaleziono konta.' });
+
+        // Jeden klient Stripe na użytkownika - jeśli już kiedyś kupował
+        // (nawet inny plan), używamy TEGO SAMEGO klienta zamiast tworzyć
+        // duplikaty. To ważne dla Customer Portal (klient musi widzieć
+        // CAŁĄ swoją historię płatności w jednym miejscu, nie rozbitą na
+        // kilka niepowiązanych "klientów" w Stripe).
+        let customerId = user.stripe_customer_id;
+        if (!customerId) {
+            const customer = await stripeApi('customers', { email: user.email, metadata: { user_id: req.session.userId } });
+            customerId = customer.id;
+            await dbRunAsync(`UPDATE users SET stripe_customer_id = ? WHERE id = ?`, [customerId, req.session.userId]);
+        }
+
+        const originUrl = `${req.protocol}://${req.get('host')}`;
+        const session = await stripeApi('checkout/sessions', {
+            mode: 'subscription',
+            customer: customerId,
+            line_items: { '0': { price: priceId, quantity: 1 } },
+            success_url: `${originUrl}/index.html?checkout=success`,
+            cancel_url: `${originUrl}/index.html?checkout=cancelled`,
+            client_reference_id: String(req.session.userId),
+            // Metadane zapisane też NA SUBSKRYPCJI (nie tylko na sesji
+            // checkoutu) - sesja checkoutu istnieje tylko chwilę, ale
+            // subskrypcja żyje miesiącami, i to właśnie jej metadane
+            // odczytujemy przy każdym kolejnym webhooku (odnowienie,
+            // zmiana planu itd.).
+            subscription_data: { metadata: { user_id: String(req.session.userId), plan } }
+        });
+
+        res.json({ success: true, url: session.url });
+    } catch (e) {
+        console.error('Błąd tworzenia sesji Stripe Checkout:', e.message);
+        res.status(500).json({ success: false, error: 'Nie udało się rozpocząć płatności. Spróbuj ponownie za chwilę.' });
+    }
+});
+
+// Krok 2: klient, który już płaci, chce zmienić plan / zaktualizować kartę /
+// anulować subskrypcję - zamiast budować to wszystko samemu, odsyłamy go do
+// gotowego, hostowanego przez Stripe panelu (Customer Portal).
+app.post('/api/stripe/portal', wymagajSesji, async (req, res) => {
+    if (req.session.isGuest) {
+        return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto.' });
+    }
+    try {
+        const user = await dbGetAsync(`SELECT stripe_customer_id FROM users WHERE id = ?`, [req.session.userId]);
+        if (!user || !user.stripe_customer_id) {
+            return res.status(400).json({ success: false, error: 'Nie masz jeszcze żadnej subskrypcji do zarządzania.' });
+        }
+        const originUrl = `${req.protocol}://${req.get('host')}`;
+        const portal = await stripeApi('billing_portal/sessions', {
+            customer: user.stripe_customer_id,
+            return_url: `${originUrl}/index.html`
+        });
+        res.json({ success: true, url: portal.url });
+    } catch (e) {
+        console.error('Błąd tworzenia sesji Stripe Customer Portal:', e.message);
+        res.status(500).json({ success: false, error: 'Nie udało się otworzyć panelu zarządzania subskrypcją.' });
+    }
+});
+
+// Krok 3: Stripe informuje NAS o tym, co się dzieje (płatność przeszła,
+// klient anulował, zmienił plan itd.) - to jedyne w pełni wiarygodne źródło
+// prawdy o statusie płatności. NIGDY nie aktywujemy płatnego planu tylko na
+// podstawie tego, że klienta przekierowało na success_url - success_url
+// mógłby odwiedzić każdy, ręcznie wpisując adres, bez faktycznego
+// zapłacenia. Płacimy uwagę WYŁĄCZNIE zdarzeniom z tego webhooka.
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+        console.error('⚠️  Otrzymano webhook Stripe, ale brak STRIPE_WEBHOOK_SECRET - odrzucam.');
+        return res.status(500).send('Webhook nieskonfigurowany.');
+    }
+    const sygnatura = req.headers['stripe-signature'];
+    const surowyBody = req.body.toString('utf8'); // req.body jest tu Bufferem (express.raw) - to zamierzone
+    if (!zweryfikujPodpisStripe(surowyBody, sygnatura, process.env.STRIPE_WEBHOOK_SECRET)) {
+        console.error('⚠️  Nieprawidłowy podpis webhooka Stripe - odrzucam (ktoś podszywa się pod Stripe albo sekret się nie zgadza).');
+        return res.status(400).send('Nieprawidłowy podpis.');
+    }
+
+    let zdarzenie;
+    try {
+        zdarzenie = JSON.parse(surowyBody);
+    } catch (e) {
+        return res.status(400).send('Nieprawidłowy JSON.');
+    }
+
+    try {
+        switch (zdarzenie.type) {
+            case 'checkout.session.completed': {
+                const session = zdarzenie.data.object;
+                if (session.mode !== 'subscription') break;
+                const userId = session.client_reference_id;
+                const plan = session.metadata?.plan;
+                if (!userId || !plan || !LIMITY_PLANOW[plan]) break;
+                const limity = LIMITY_PLANOW[plan];
+                await dbRunAsync(`UPDATE users SET stripe_subscription_id = ? WHERE id = ?`, [session.subscription, userId]);
+                await dbRunAsync(
+                    `UPDATE limity_uzytkownika SET plan = ?, tokeny_ai = ?, limit_produktow = ? WHERE user_id = ?`,
+                    [plan, limity.tokeny, limity.produkty, String(userId)]
+                );
+                console.log(`💳 Płatność potwierdzona - użytkownik ${userId} aktywował plan ${plan}.`);
+                break;
+            }
+            case 'invoice.payment_succeeded': {
+                // Odpala się przy KAŻDEJ udanej płatności - pierwszej I
+                // wszystkich kolejnych, comiesięcznych odnowieniach.
+                // Nakładanie się z checkout.session.completed przy
+                // pierwszej płatności jest nieszkodliwe (to samo ustawiamy
+                // dwa razy) - ale to WŁAŚNIE TUTAJ, przy odnowieniach,
+                // realizuje się zasada "tokeny z abonamentu resetują się co
+                // miesiąc, wykorzystaj albo strać" (dokupione osobno tokeny
+                // - gdy je zbudujemy - NIE będą tu ruszane, zostają osobną,
+                // nigdy niewygasającą pulą).
+                const invoice = zdarzenie.data.object;
+                const customerId = invoice.customer;
+                if (!customerId) break;
+                const user = await dbGetAsync(`SELECT id FROM users WHERE stripe_customer_id = ?`, [customerId]);
+                if (!user) break;
+                const aktualneLimity = await dbGetAsync(`SELECT plan FROM limity_uzytkownika WHERE user_id = ?`, [String(user.id)]);
+                const plan = aktualneLimity?.plan;
+                if (!plan || !LIMITY_PLANOW[plan] || !PLANY_PLATNE.includes(plan)) break;
+                const limity = LIMITY_PLANOW[plan];
+                await dbRunAsync(`UPDATE limity_uzytkownika SET tokeny_ai = ? WHERE user_id = ?`, [limity.tokeny, String(user.id)]);
+                console.log(`🔄 Odnowienie subskrypcji - tokeny AI zresetowane do pełnego limitu planu ${plan} dla użytkownika ${user.id}.`);
+                break;
+            }
+            case 'customer.subscription.updated': {
+                // Klient zmienił plan (np. przez Customer Portal) - musimy
+                // dopasować NOWĄ cenę do naszego planu i zaktualizować
+                // limity. Rozpoznajemy plan po ID ceny, nie po metadanych -
+                // metadane bywają zawodne przy zmianach zainicjowanych z
+                // poziomu Stripe Portal, ID ceny nigdy nie kłamie.
+                const subscription = zdarzenie.data.object;
+                const priceId = subscription.items?.data?.[0]?.price?.id;
+                const plan = STRIPE_PLAN_PO_CENIE[priceId];
+                if (!plan) break;
+                const user = await dbGetAsync(`SELECT id FROM users WHERE stripe_customer_id = ?`, [subscription.customer]);
+                if (!user) break;
+                const limity = LIMITY_PLANOW[plan];
+                await dbRunAsync(
+                    `UPDATE limity_uzytkownika SET plan = ?, tokeny_ai = ?, limit_produktow = ? WHERE user_id = ?`,
+                    [plan, limity.tokeny, limity.produkty, String(user.id)]
+                );
+                console.log(`🔁 Zmiana planu - użytkownik ${user.id} przełączony na ${plan}.`);
+                break;
+            }
+            case 'customer.subscription.deleted': {
+                // Subskrypcja anulowana/wygasła - klient wraca do planu
+                // FREE (nie zostaje bez konta, tylko traci uprawnienia
+                // planu płatnego).
+                const subscription = zdarzenie.data.object;
+                const user = await dbGetAsync(`SELECT id FROM users WHERE stripe_customer_id = ?`, [subscription.customer]);
+                if (!user) break;
+                const wolny = LIMITY_PLANOW.FREE;
+                await dbRunAsync(`UPDATE users SET stripe_subscription_id = NULL WHERE id = ?`, [user.id]);
+                await dbRunAsync(
+                    `UPDATE limity_uzytkownika SET plan = 'FREE', tokeny_ai = ?, limit_produktow = ? WHERE user_id = ?`,
+                    [wolny.tokeny, wolny.produkty, String(user.id)]
+                );
+                console.log(`❌ Subskrypcja zakończona - użytkownik ${user.id} wrócił do planu FREE.`);
+                break;
+            }
+            default:
+                break; // inne typy zdarzeń nas nie interesują - potwierdzamy odbiór i ignorujemy
+        }
+        res.json({ received: true });
+    } catch (e) {
+        console.error('Błąd przetwarzania webhooka Stripe:', e.message);
+        // Zwracamy 500, żeby Stripe spróbował dostarczyć to zdarzenie
+        // ponownie później (mają wbudowane ponawianie z odstępami) -
+        // zwrócenie 200 mimo błędu oznaczałoby dla Stripe "wszystko OK" i
+        // stracilibyśmy to zdarzenie na zawsze.
+        res.status(500).send('Błąd przetwarzania.');
+    }
 });
 
 // ============== RĘCZNE NADANIE PLANU (dla Ciebie, nie dla klientów) ==============
