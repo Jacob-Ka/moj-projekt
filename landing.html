@@ -120,6 +120,9 @@
             <button class="close-modal" onclick="zamknijModale()">&times;</button>
             <h2 data-i18n="login_title"></h2>
             <div class="modal-error" id="loginError"></div>
+            <div id="loginResendWrapper" style="display:none; margin-bottom:14px; text-align:center;">
+                <a onclick="wyslijPonownieWeryfikacje()" style="color:#818cf8; font-size:13px; cursor:pointer;" data-i18n="resend_verification_link"></a>
+            </div>
             <input type="email" id="loginEmail" data-i18n-ph="login_email_ph" placeholder="Email">
             <input type="password" id="loginHaslo" data-i18n-ph="login_pass_ph" placeholder="Hasło">
             <button class="btn-primary" data-i18n="login_btn" onclick="zaloguj()"></button>
@@ -131,16 +134,23 @@
     <div class="modal-overlay" id="registerModal">
         <div class="modal-card" style="position: relative;">
             <button class="close-modal" onclick="zamknijModale()">&times;</button>
-            <h2 data-i18n="register_title"></h2>
-            <div class="modal-error" id="registerError"></div>
-            <input type="email" id="registerEmail" data-i18n-ph="register_email_ph" placeholder="Email">
-            <input type="password" id="registerHaslo" data-i18n-ph="register_pass_ph" placeholder="Hasło (min. 6 znaków)">
-            <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#94a3b8; margin-bottom:14px; cursor:pointer; line-height:1.5;">
-                <input type="checkbox" id="registerZgoda" style="margin-top:2px; width:auto; flex-shrink:0;">
-                <span>Zapoznałem/-am się i akceptuję <a href="regulamin.html" target="_blank" style="color:#818cf8;">Regulamin</a> oraz <a href="polityka-prywatnosci.html" target="_blank" style="color:#818cf8;">Politykę Prywatności</a>.</span>
-            </label>
-            <button class="btn-primary" data-i18n="register_btn" onclick="zarejestruj()"></button>
-            <div class="switch-link"><span data-i18n="register_switch"></span> <a onclick="pokazModal('login')" data-i18n="register_switch_link"></a></div>
+            <div id="registerFormWrapper">
+                <h2 data-i18n="register_title"></h2>
+                <div class="modal-error" id="registerError"></div>
+                <input type="email" id="registerEmail" data-i18n-ph="register_email_ph" placeholder="Email">
+                <input type="password" id="registerHaslo" data-i18n-ph="register_pass_ph" placeholder="Hasło (min. 6 znaków)">
+                <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#94a3b8; margin-bottom:14px; cursor:pointer; line-height:1.5;">
+                    <input type="checkbox" id="registerZgoda" style="margin-top:2px; width:auto; flex-shrink:0;">
+                    <span>Zapoznałem/-am się i akceptuję <a href="regulamin.html" target="_blank" style="color:#818cf8;">Regulamin</a> oraz <a href="polityka-prywatnosci.html" target="_blank" style="color:#818cf8;">Politykę Prywatności</a>.</span>
+                </label>
+                <button class="btn-primary" data-i18n="register_btn" onclick="zarejestruj()"></button>
+                <div class="switch-link"><span data-i18n="register_switch"></span> <a onclick="pokazModal('login')" data-i18n="register_switch_link"></a></div>
+            </div>
+            <div id="registerSukcesWeryfikacja" style="display:none; text-align:center; padding: 10px 0;">
+                <div style="font-size:40px; margin-bottom:12px;">📬</div>
+                <h2 data-i18n="verify_email_sent_title" style="margin-bottom:10px;"></h2>
+                <p style="color:#94a3b8; font-size:14px;" data-i18n="verify_email_sent_desc"></p>
+            </div>
         </div>
     </div>
 
@@ -173,11 +183,16 @@
             }
         }
 
+        let ostatniEmailLogowania = '';
+
         async function zaloguj() {
             const email = document.getElementById('loginEmail').value;
             const haslo = document.getElementById('loginHaslo').value;
             const errEl = document.getElementById('loginError');
+            const resendWrapper = document.getElementById('loginResendWrapper');
             errEl.innerText = '';
+            resendWrapper.style.display = 'none';
+            ostatniEmailLogowania = email;
             try {
                 const res = await fetch(`${API}/login`, {
                     method: 'POST', credentials: 'include',
@@ -185,11 +200,28 @@
                     body: JSON.stringify({ email, haslo })
                 });
                 const data = await res.json();
-                if (data.success) window.location.href = 'index.html';
-                else errEl.innerText = data.error || 'Błąd logowania.';
+                if (data.success) {
+                    window.location.href = 'index.html';
+                } else {
+                    errEl.innerText = data.error || 'Błąd logowania.';
+                    if (data.niezweryfikowany) resendWrapper.style.display = 'block';
+                }
             } catch (e) {
                 errEl.innerText = 'Nie udało się połączyć z serwerem.';
             }
+        }
+
+        async function wyslijPonownieWeryfikacje() {
+            if (!ostatniEmailLogowania) return;
+            const resendWrapper = document.getElementById('loginResendWrapper');
+            try {
+                await fetch(`${API}/wyslij-ponownie-weryfikacje`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: ostatniEmailLogowania })
+                });
+            } catch (e) { /* ciche niepowodzenie - komunikat i tak jest zawsze taki sam */ }
+            resendWrapper.innerHTML = `<span style="color:#4ade80; font-size:13px;">${t('verify_email_resent')}</span>`;
         }
 
         async function zarejestruj() {
@@ -211,12 +243,34 @@
                     body: JSON.stringify({ email, haslo, akceptujeRegulamin: true })
                 });
                 const data = await res.json();
-                if (data.success) window.location.href = 'index.html';
-                else errEl.innerText = data.error || 'Błąd rejestracji.';
+                if (data.success && data.wymaganaWeryfikacja) {
+                    // Konto istnieje, ale NIE loguje automatycznie - musi
+                    // najpierw kliknąć link w mailu. Pokazujemy komunikat
+                    // "sprawdź skrzynkę" zamiast od razu przenosić do panelu.
+                    document.getElementById('registerFormWrapper').style.display = 'none';
+                    document.getElementById('registerSukcesWeryfikacja').style.display = 'block';
+                } else if (data.success) {
+                    window.location.href = 'index.html';
+                } else {
+                    errEl.innerText = data.error || 'Błąd rejestracji.';
+                }
             } catch (e) {
                 errEl.innerText = 'Nie udało się połączyć z serwerem.';
             }
         }
+
+        // Obsługa powrotu z linku weryfikacyjnego w mailu, gdy token był
+        // nieprawidłowy lub wygasł (sukces przenosi od razu do index.html,
+        // więc tutaj lądujemy tylko przy problemie).
+        (function obslugaWynikuWeryfikacji() {
+            const parametry = new URLSearchParams(window.location.search);
+            const wynik = parametry.get('weryfikacja');
+            if (wynik === 'blad' || wynik === 'wygasl') {
+                pokazModal('login');
+                document.getElementById('loginError').innerText = wynik === 'wygasl' ? t('verify_link_expired') : t('verify_link_invalid');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        })();
     </script>
 </body>
 </html>

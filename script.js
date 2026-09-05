@@ -372,7 +372,13 @@ function obslugaPowrotuZeStripe() {
     } else if (wynikCheckoutu === 'cancelled') {
         pokazToast(t('checkout_cancelled_msg'), 'info');
     }
-    if (wynikCheckoutu) {
+    // Powrót z linku weryfikacyjnego w mailu (patrz obsluga w
+    // /api/weryfikuj-email, która przekierowuje tutaj z tym parametrem po
+    // udanym potwierdzeniu adresu email).
+    if (parametry.get('weryfikacja') === 'sukces') {
+        pokazToast(t('verify_success_msg'), 'success');
+    }
+    if (wynikCheckoutu || parametry.get('weryfikacja')) {
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 }

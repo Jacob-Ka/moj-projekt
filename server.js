@@ -398,6 +398,65 @@ function zweryfikujPodpisStripe(surowyBody, naglowekSygnatury, sekret) {
     return wiekSekundy <= 300;
 }
 
+// ============== WERYFIKACJA EMAILA PRZY REJESTRACJI ==============
+// Chroni przed skryptem masowo zakładającym fałszywe konta (każde z
+// darmową pulą tokenów FREE) - bez potwierdzenia prawdziwego adresu email,
+// konto nie może się w ogóle zalogować. Wysyłka przez Resend
+// (resend.com) - zwykłe REST API, bez dodatkowej biblioteki, ten sam styl
+// co integracja Stripe.
+//
+// CELOWA DEGRADACJA: jeśli RESEND_API_KEY nie jest ustawiony (np. jeszcze
+// nie skonfigurowałeś Resend na Railway), cała funkcja weryfikacji jest
+// WYŁĄCZONA - rejestracja i logowanie działają dokładnie tak jak przed jej
+// wprowadzeniem, zamiast blokować wszystkim dostęp do aplikacji przez
+// zapomnianą zmienną środowiskową.
+function weryfikacjaEmailAktywna() {
+    return Boolean(process.env.RESEND_API_KEY);
+}
+
+async function wyslijEmail(do_, temat, htmlTresc) {
+    if (!process.env.RESEND_API_KEY) return false;
+    const nadawca = process.env.RESEND_FROM_EMAIL || 'PriceAI Cloud <onboarding@resend.dev>';
+    try {
+        const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ from: nadawca, to: do_, subject: temat, html: htmlTresc })
+        });
+        if (!res.ok) {
+            const blad = await res.json().catch(() => ({}));
+            console.error(`⚠️  Nie udało się wysłać maila do ${do_}:`, blad?.message || res.status);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error(`⚠️  Błąd wysyłki maila do ${do_}:`, e.message);
+        return false;
+    }
+}
+
+async function wyslijMailWeryfikacyjny(email, token, originUrl) {
+    const link = `${originUrl}/api/weryfikuj-email?token=${token}`;
+    const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+            <h2 style="color:#4338ca;">Potwierdź swój adres email</h2>
+            <p>Cześć! Żeby aktywować konto w PriceAI Cloud, kliknij poniższy przycisk:</p>
+            <p style="text-align:center; margin: 30px 0;">
+                <a href="${link}" style="background:#4f46e5; color:#fff; padding:14px 28px; border-radius:8px; text-decoration:none; font-weight:bold;">Potwierdź adres email</a>
+            </p>
+            <p style="color:#64748b; font-size:13px;">Jeśli przycisk nie działa, skopiuj ten link do przeglądarki:<br>${link}</p>
+            <p style="color:#94a3b8; font-size:12px;">Link jest ważny przez 24 godziny. Jeśli to nie Ty zakładałeś konto, zignoruj tę wiadomość.</p>
+        </div>`;
+    return wyslijEmail(email, 'Potwierdź swój adres email - PriceAI Cloud', html);
+}
+
+function wygenerujTokenWeryfikacyjny() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
 // CAŁY blok tworzenia tabel i migracji (poniżej) jest opakowany w
 // db.serialize() - bez tego sterownik sqlite3 NIE gwarantuje kolejności
 // wykonania kolejnych db.run(). Migracje (ALTER TABLE/UPDATE) zależą od
@@ -681,6 +740,22 @@ db.run(`ALTER TABLE users ADD COLUMN stripe_customer_id TEXT`, (err) => {
 db.run(`ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT`, (err) => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Migracja stripe_subscription_id:', err.message);
 });
+// Weryfikacja adresu email przy rejestracji - chroni przed skryptem
+// zakładającym masowo fałszywe konta (każde z darmową pulą tokenów FREE).
+// email_zweryfikowany=1 dla kont sprzed tej funkcji (DEFAULT 1) - nie
+// blokujemy nagle dostępu nikomu, kto już miał konto, zanim to wdrożyliśmy.
+db.run(`ALTER TABLE users ADD COLUMN email_zweryfikowany INTEGER DEFAULT 1`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja email_zweryfikowany:', err.message);
+});
+db.run(`ALTER TABLE users ADD COLUMN token_weryfikacyjny TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja token_weryfikacyjny:', err.message);
+});
+db.run(`ALTER TABLE users ADD COLUMN token_weryfikacyjny_wygasa TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja token_weryfikacyjny_wygasa:', err.message);
+});
+db.run(`ALTER TABLE users ADD COLUMN ostatnia_weryfikacja_wyslana TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja ostatnia_weryfikacja_wyslana:', err.message);
+});
 }); // koniec db.serialize() dla tworzenia tabel i migracji
 
 // UWAGA: ta funkcja MUSI być zdefiniowana na poziomie globalnym pliku (poza
@@ -773,26 +848,101 @@ app.post('/api/register', async (req, res) => {
     }
     try {
         const hash = await bcrypt.hash(haslo, 10);
+        const wymaganaWeryfikacja = weryfikacjaEmailAktywna();
+        const token = wymaganaWeryfikacja ? wygenerujTokenWeryfikacyjny() : null;
+        const wygasa = wymaganaWeryfikacja ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
+
         db.run(
-            `INSERT INTO users (email, haslo_hash, utworzono, regulamin_zaakceptowano) VALUES (?, ?, ?, ?)`,
-            [email.toLowerCase().trim(), hash, new Date().toISOString(), new Date().toISOString()],
-            function (err) {
+            `INSERT INTO users (email, haslo_hash, utworzono, regulamin_zaakceptowano, email_zweryfikowany, token_weryfikacyjny, token_weryfikacyjny_wygasa, ostatnia_weryfikacja_wyslana)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [email.toLowerCase().trim(), hash, new Date().toISOString(), new Date().toISOString(), wymaganaWeryfikacja ? 0 : 1, token, wygasa, wymaganaWeryfikacja ? new Date().toISOString() : null],
+            async function (err) {
                 if (err) {
                     if (err.message.includes('UNIQUE')) {
                         return res.status(400).json({ success: false, error: 'Ten email jest już zarejestrowany.' });
                     }
                     return res.status(500).json({ success: false, error: 'Błąd rejestracji.' });
                 }
-                req.session.userId = String(this.lastID);
-                req.session.email = email;
-                req.session.isGuest = false;
-                utworzLimityDlaUzytkownika(req.session.userId, () => {
-                    res.json({ success: true, email });
+                const userId = String(this.lastID);
+                utworzLimityDlaUzytkownika(userId, async () => {
+                    if (!wymaganaWeryfikacja) {
+                        // Weryfikacja wyłączona (brak RESEND_API_KEY) - stare
+                        // zachowanie: od razu zalogowany, bez potwierdzania maila.
+                        req.session.userId = userId;
+                        req.session.email = email;
+                        req.session.isGuest = false;
+                        return res.json({ success: true, email, wymaganaWeryfikacja: false });
+                    }
+                    const originUrl = `${req.protocol}://${req.get('host')}`;
+                    await wyslijMailWeryfikacyjny(email, token, originUrl);
+                    // ŚWIADOMIE nie logujemy użytkownika od razu - musi
+                    // najpierw kliknąć link w mailu. Konto istnieje w bazie
+                    // (limity już utworzone), ale jest bezużyteczne bez
+                    // potwierdzenia (patrz blokada w /api/login niżej).
+                    res.json({ success: true, email, wymaganaWeryfikacja: true });
                 });
             }
         );
     } catch (e) {
         res.status(500).json({ success: false, error: 'Błąd rejestracji.' });
+    }
+});
+
+// Klient klika link z maila -> potwierdzamy token, oznaczamy konto jako
+// zweryfikowane, i od razu logujemy (jeden klik = zweryfikowany + zalogowany,
+// zamiast każenia mu jeszcze raz wpisywać hasło).
+app.get('/api/weryfikuj-email', async (req, res) => {
+    const { token } = req.query;
+    if (!token) return res.redirect('/landing.html?weryfikacja=blad');
+
+    try {
+        const user = await dbGetAsync(`SELECT id, email, token_weryfikacyjny_wygasa FROM users WHERE token_weryfikacyjny = ?`, [token]);
+        if (!user) return res.redirect('/landing.html?weryfikacja=blad');
+        if (new Date(user.token_weryfikacyjny_wygasa) < new Date()) {
+            return res.redirect('/landing.html?weryfikacja=wygasl');
+        }
+        await dbRunAsync(
+            `UPDATE users SET email_zweryfikowany = 1, token_weryfikacyjny = NULL, token_weryfikacyjny_wygasa = NULL WHERE id = ?`,
+            [user.id]
+        );
+        req.session.userId = String(user.id);
+        req.session.email = user.email;
+        req.session.isGuest = false;
+        res.redirect('/index.html?weryfikacja=sukces');
+    } catch (e) {
+        console.error('Błąd weryfikacji emaila:', e.message);
+        res.redirect('/landing.html?weryfikacja=blad');
+    }
+});
+
+// Klient, który zgubił/nie dostał maila weryfikacyjnego, może poprosić o
+// nowy. Ograniczone do jednej próby na 60 sekund per konto - zapobiega
+// zasypywaniu czyjejś skrzynki (albo naszego limitu Resend) powtarzanymi
+// kliknięciami. Odpowiedź jest ZAWSZE taka sama, niezależnie czy email
+// istnieje w bazie - inaczej ten endpoint dałby się wykorzystać do
+// sprawdzania, czyj email jest u nas zarejestrowany.
+app.post('/api/wyslij-ponownie-weryfikacje', async (req, res) => {
+    const { email } = req.body;
+    const odpowiedzOgolna = { success: true, message: 'Jeśli to konto istnieje i wymaga weryfikacji, wysłaliśmy nowy link.' };
+    if (!email || !weryfikacjaEmailAktywna()) return res.json(odpowiedzOgolna);
+
+    try {
+        const user = await dbGetAsync(`SELECT id, email_zweryfikowany, ostatnia_weryfikacja_wyslana FROM users WHERE email = ?`, [email.toLowerCase().trim()]);
+        if (!user || user.email_zweryfikowany) return res.json(odpowiedzOgolna);
+        if (user.ostatnia_weryfikacja_wyslana && (Date.now() - new Date(user.ostatnia_weryfikacja_wyslana).getTime()) < 60000) {
+            return res.json(odpowiedzOgolna); // limit czasowy - milczymy, jakby wysłano
+        }
+        const token = wygenerujTokenWeryfikacyjny();
+        const wygasa = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        await dbRunAsync(
+            `UPDATE users SET token_weryfikacyjny = ?, token_weryfikacyjny_wygasa = ?, ostatnia_weryfikacja_wyslana = ? WHERE id = ?`,
+            [token, wygasa, new Date().toISOString(), user.id]
+        );
+        const originUrl = `${req.protocol}://${req.get('host')}`;
+        await wyslijMailWeryfikacyjny(email, token, originUrl);
+        res.json(odpowiedzOgolna);
+    } catch (e) {
+        res.json(odpowiedzOgolna);
     }
 });
 
@@ -805,6 +955,14 @@ app.post('/api/login', (req, res) => {
 
         const pasuje = await bcrypt.compare(haslo, user.haslo_hash);
         if (!pasuje) return res.status(401).json({ success: false, error: 'Nieprawidłowy email lub hasło.' });
+
+        // Sprawdzamy hasło PRZED sprawdzeniem weryfikacji - inaczej ktoś
+        // próbujący losowych haseł mógłby po odpowiedzi odgadnąć, czy dany
+        // email w ogóle istnieje w naszej bazie, zanim jeszcze zgadnie
+        // hasło (wyciek informacji przez różnicę komunikatów błędu).
+        if (weryfikacjaEmailAktywna() && !user.email_zweryfikowany) {
+            return res.status(403).json({ success: false, error: 'Potwierdź swój adres email, żeby się zalogować - sprawdź skrzynkę (także spam).', niezweryfikowany: true });
+        }
 
         req.session.userId = String(user.id);
         req.session.email = user.email;
@@ -2216,10 +2374,25 @@ async function pobierzCeneZeStrony(url, targetCountry, targetCurrency) {
         ostatniTekst = wynik.html || ostatniTekst;
     } catch (bladPrzegladarki) {
         if (!ostatniTekst) {
-            throw new Error(`${bladPolaczenia?.message || 'Nie udało się otworzyć strony.'} (dodatkowo próba przez przeglądarkę: ${bladPrzegladarki.message})`);
+            bladPolaczenia = bladPrzegladarki; // brak wyniku z żadnej darmowej metody - próbujemy dalej Metodą 3, zanim się poddamy
         }
         // Mamy już HTML z metody 1 (samo wyszukanie ceny w nim zawiodło) -
-        // przechodzimy do Kroku B na tym, co już mamy, mimo że Puppeteer się nie powiódł.
+        // przechodzimy dalej na tym, co już mamy, mimo że Puppeteer się nie powiódł.
+    }
+
+    // Metoda 3 (płatna ostateczność, wyłącznie gdy ZYTE_API_KEY jest
+    // ustawiony): obie darmowe metody zawiodły - prawdopodobnie strona ma
+    // świadomą ochronę antybotową. Zyte to wyspecjalizowana usługa firmy
+    // trzeciej do niezawodnego pobierania treści takich stron - włącza się
+    // TYLKO tutaj, jako ostatnia deska ratunku, nie zamiast darmowych metod.
+    if (process.env.ZYTE_API_KEY) {
+        try {
+            const wynik = await pobierzCeneZaPomocaZyte(url);
+            if (wynik.cena !== null) return wynik.cena;
+            ostatniTekst = wynik.html || ostatniTekst;
+        } catch (bladZyte) {
+            if (!ostatniTekst) bladPolaczenia = bladZyte;
+        }
     }
 
     // KROK B: obie metody regexowe (Krok A) odpowiedziały, ale żadna nie
@@ -2554,6 +2727,51 @@ async function pobierzCenePrzezPrzegladarke(url) {
         throw new Error(e.message || 'Błąd podczas otwierania strony w przeglądarce.');
     } finally {
         if (przegladarka) await przegladarka.close().catch(() => {});
+    }
+}
+
+// Metoda 3 (płatna, ostateczność) - Zyte API. Zwykłe zapytanie (Metoda 1) i
+// nasz własny Puppeteer (Metoda 2) to uczciwe, "gołe" próby - jeśli strona
+// ma świadomą, zaawansowaną ochronę antybotową, obie zostaną zablokowane, co
+// jest oczekiwane. Zyte to OSOBNA, płatna usługa trzeciej firmy,
+// wyspecjalizowana właśnie w niezawodnym pobieraniu treści z takich
+// chronionych stron (zarządza własną siecią serwerów pośredniczących i
+// wykrywaniem blokad) - używana świadomie, na odpowiedzialność właściciela
+// aplikacji, wyłącznie do jawnego odczytu publicznie widocznej ceny
+// produktu, TYLKO gdy obie darmowe metody już zawiodły. Bez ustawionego
+// ZYTE_API_KEY ta metoda jest całkowicie pomijana - reszta łańcucha (Metoda
+// 1, Metoda 2, Krok B AI) działa dokładnie tak jak wcześniej.
+async function pobierzCeneZaPomocaZyte(url) {
+    if (!process.env.ZYTE_API_KEY) {
+        throw new Error('ZYTE_API_KEY nie jest ustawiony - metoda pominięta.');
+    }
+    const kontroler = new AbortController();
+    const timeout = setTimeout(() => kontroler.abort(), 25000);
+    try {
+        const res = await fetch('https://api.zyte.com/v1/extract', {
+            method: 'POST',
+            headers: {
+                Authorization: `Basic ${Buffer.from(`${process.env.ZYTE_API_KEY}:`).toString('base64')}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url, browserHtml: true }),
+            signal: kontroler.signal
+        });
+        if (!res.ok) {
+            const blad = await res.json().catch(() => ({}));
+            throw new Error(blad?.detail || blad?.title || `Zyte API zwróciło błąd (${res.status})`);
+        }
+        const dane = await res.json();
+        const html = dane.browserHtml;
+        if (!html) throw new Error('Zyte API nie zwróciło treści strony.');
+
+        const domena = domenaZUrl(url);
+        const preferowanaStrategia = domena ? await pobierzZnanaStrategieDomeny(domena) : null;
+        const { cena, strategia } = wyciagnijCeneZHtmlZeStrategia(html, preferowanaStrategia);
+        if (cena !== null && domena) zapiszStrategieDomeny(domena, strategia);
+        return { cena, html };
+    } finally {
+        clearTimeout(timeout);
     }
 }
 
