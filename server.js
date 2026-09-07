@@ -6,15 +6,47 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
 
+// ============== ALERTY NA DISCORDA (awarie serwera) ==============
+// Bez ZMIENNEJ DISCORD_WEBHOOK_URL ta funkcja jest cichym no-op - reszta
+// aplikacji działa dokładnie tak samo jak wcześniej. Z ustawionym webhookiem,
+// wysyła krótką wiadomość na wskazany kanał Discorda, żebyś dowiedział się o
+// poważnej awarii OD RAZU, zamiast dopiero od sfrustrowanego klienta.
+//
+// Celowe TŁUMIENIE (throttling): jeśli serwer wpadnie w pętlę ciągłych
+// błędów tego samego typu (np. crash-restart-crash), NIE zasypujemy Discorda
+// setkami wiadomości w kilka sekund - najwyżej jedna na 5 minut per kategoria
+// błędu. Pierwsza wiadomość idzie zawsze natychmiast.
+const ostatniAlertDiscord = {};
+async function wyslijAlertDiscord(kategoria, tresc) {
+    if (!process.env.DISCORD_WEBHOOK_URL) return;
+    const teraz = Date.now();
+    const ostatni = ostatniAlertDiscord[kategoria] || 0;
+    if (teraz - ostatni < 5 * 60 * 1000) return; // stłumione - ta sama kategoria za świeżo
+    ostatniAlertDiscord[kategoria] = teraz;
+    try {
+        await fetch(process.env.DISCORD_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: `🚨 **PriceAI Cloud - ${kategoria}**\n${tresc}` })
+        });
+    } catch (e) {
+        // Nie ma tu nic więcej do zrobienia - jeśli sam Discord nie
+        // odpowiada, po prostu tracimy tę jedną wiadomość, serwer działa dalej.
+        console.error('⚠️  Nie udało się wysłać alertu na Discorda:', e.message);
+    }
+}
+
 // ============== SIATKA BEZPIECZEŃSTWA - SERWER NIGDY SIĘ NIE ZATRZYMUJE ==============
 // Bez tego, jeden nieoczekiwany błąd (np. dziwna odpowiedź strony konkurencji,
 // zerwane połączenie z internetem w trakcie zapytania) mógłby zatrzymać CAŁY
 // serwer, wymagając ręcznego restartu. Zamiast tego - logujemy błąd i działamy dalej.
 process.on('unhandledRejection', (blad) => {
     console.error('⚠️  Nieobsłużony błąd (serwer działa dalej):', blad);
+    wyslijAlertDiscord('Nieobsłużony błąd', `\`\`\`${String(blad?.message || blad).slice(0, 500)}\`\`\``);
 });
 process.on('uncaughtException', (blad) => {
     console.error('⚠️  Nieoczekiwany błąd (serwer działa dalej):', blad);
+    wyslijAlertDiscord('Nieoczekiwany błąd', `\`\`\`${String(blad?.message || blad).slice(0, 500)}\`\`\``);
 });
 
 const app = express();
@@ -4599,6 +4631,7 @@ setInterval(przetwarzajKolejkeHarmonogramow, 10 * 1000);
 // zamiast pustej, zawieszonej odpowiedzi albo crasha serwera.
 app.use((err, req, res, next) => {
     console.error('⚠️  Błąd zapytania:', err);
+    wyslijAlertDiscord('Błąd zapytania', `\`${req.method} ${req.originalUrl}\`\n\`\`\`${String(err?.message || err).slice(0, 500)}\`\`\``);
     if (res.headersSent) return next(err);
     res.status(500).json({ success: false, error: 'Wystąpił nieoczekiwany błąd serwera. Spróbuj ponownie.' });
 });
@@ -4608,4 +4641,14 @@ app.listen(PORT, () => {
     console.log(`🛡️  Limity: ${OGOLNY_LIMIT_ZAPYTAN}/min ogólnie, ${AI_LIMIT_NA_GODZINE}/h AI per IP, ${DZIENNY_LIMIT_AI}/dzień AI łącznie.`);
     console.log(`⏰ Automatyczny harmonogram cenowy: aktywny (sprawdzanie co minutę).`);
     if (!ANTHROPIC_API_KEY) console.log('⚠️  Brak ANTHROPIC_API_KEY w .env - sugestie AI nie będą działać, dopóki go nie dodasz.');
+    // Powiadomienie o (re)starcie - nie tylko potwierdza, że sam webhook
+    // działa, ale każdy NIESPODZIEWANY restart (np. po prawdziwej awarii,
+    // nie po Twoim własnym wdrożeniu) też będzie tu widoczny.
+    if (process.env.DISCORD_WEBHOOK_URL) {
+        fetch(process.env.DISCORD_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: `✅ **PriceAI Cloud** - serwer uruchomiony (port ${PORT}).` })
+        }).catch(() => {}); // brak reakcji na błąd - to tylko powitalna wiadomość, nie krytyczna
+    }
 });
