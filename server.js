@@ -1917,6 +1917,9 @@ async function wykonajImportZPlatformy(userId, platforma, storeUrl, consumerKey,
 }
 
 app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
+    if (req.session.isGuest) {
+        return res.status(403).json({ success: false, error: 'Konto DEMO nie może podłączyć prawdziwego sklepu - załóż darmowe konto, żeby korzystać z tej funkcji.' });
+    }
     const { storeUrl, consumerKey, consumerSecret, waluta, rynek, autoRepriceTime, dailyAutoSync, globalAutoPricing, trybCenowy, wartoscReguly, platforma } = req.body;
     const userId = req.session.userId;
     const platformaWartosc = (platforma === 'shopify' || platforma === 'csv') ? platforma : 'woocommerce';

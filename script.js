@@ -46,6 +46,7 @@ async function sprawdzSesje() {
         window.tokenyAILimit = dane.tokeny_ai_limit;
         window.limitProduktow = dane.limit_produktow;
         window.planUzytkownika = dane.plan;
+        window.jestDemo = Boolean(dane.demo);
 
         const bar = document.getElementById('userBar');
         const text = document.getElementById('userBarText');
@@ -1424,6 +1425,16 @@ async function importujCSV(inputEl) {
 
 // ============== KONFIGURACJA / IMPORT ==============
 async function importOferty() {
+    if (window.jestDemo) {
+        // Świadome ograniczenie: konto DEMO jest tymczasowe (znika po
+        // zamknięciu przeglądarki) i ma już gotowe, przykładowe dane do
+        // przetestowania reszty aplikacji - podłączenie PRAWDZIWEGO sklepu
+        // (z realnymi kluczami API) na takim koncie byłoby mylące, bo
+        // połączenie i tak zniknęłoby razem z sesją, a w międzyczasie
+        // realnie wysyłalibyśmy zmiany cen do czyjegoś prawdziwego sklepu.
+        pokazToast(t('demo_config_unavailable'), 'info');
+        return;
+    }
     const platforma = document.getElementById('platformaSklepu')?.value || 'woocommerce';
     if (platforma === 'csv') {
         pokazToast('Tryb "Inny system (CSV)" nie wymaga zapisu tutaj - użyj przycisków importu/eksportu CSV w zakładce Synchronizacja.', 'info');
