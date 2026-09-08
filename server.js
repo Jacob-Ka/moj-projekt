@@ -788,6 +788,12 @@ db.run(`ALTER TABLE users ADD COLUMN token_weryfikacyjny_wygasa TEXT`, (err) => 
 db.run(`ALTER TABLE users ADD COLUMN ostatnia_weryfikacja_wyslana TEXT`, (err) => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Migracja ostatnia_weryfikacja_wyslana:', err.message);
 });
+// polecony_przez: kod agencji/partnera z linku polecającego (np.
+// ?ref=creativium), zapisywany RAZ, przy rejestracji - żeby wiedzieć komu
+// należy się prowizja, bez polegania na tym, że klient sam o tym wspomni.
+db.run(`ALTER TABLE users ADD COLUMN polecony_przez TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja polecony_przez:', err.message);
+});
 }); // koniec db.serialize() dla tworzenia tabel i migracji
 
 // UWAGA: ta funkcja MUSI być zdefiniowana na poziomie globalnym pliku (poza
@@ -871,7 +877,7 @@ function wymagajSesji(req, res, next) {
 }
 
 app.post('/api/register', async (req, res) => {
-    const { email, haslo, akceptujeRegulamin } = req.body;
+    const { email, haslo, akceptujeRegulamin, poleconyPrzez } = req.body;
     if (!email || !haslo || haslo.length < 6) {
         return res.status(400).json({ success: false, error: 'Podaj email i hasło (min. 6 znaków).' });
     }
@@ -883,11 +889,15 @@ app.post('/api/register', async (req, res) => {
         const wymaganaWeryfikacja = weryfikacjaEmailAktywna();
         const token = wymaganaWeryfikacja ? wygenerujTokenWeryfikacyjny() : null;
         const wygasa = wymaganaWeryfikacja ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
+        // Kod z linku polecającego (np. ?ref=creativium) - przycinamy do
+        // rozsądnej długości i tylko bezpieczne znaki, żeby ktoś nie wpisał
+        // tu czegoś dziwnego ręcznie manipulując zapytaniem.
+        const kodPolecajacy = typeof poleconyPrzez === 'string' ? poleconyPrzez.trim().slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '') || null : null;
 
         db.run(
-            `INSERT INTO users (email, haslo_hash, utworzono, regulamin_zaakceptowano, email_zweryfikowany, token_weryfikacyjny, token_weryfikacyjny_wygasa, ostatnia_weryfikacja_wyslana)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [email.toLowerCase().trim(), hash, new Date().toISOString(), new Date().toISOString(), wymaganaWeryfikacja ? 0 : 1, token, wygasa, wymaganaWeryfikacja ? new Date().toISOString() : null],
+            `INSERT INTO users (email, haslo_hash, utworzono, regulamin_zaakceptowano, email_zweryfikowany, token_weryfikacyjny, token_weryfikacyjny_wygasa, ostatnia_weryfikacja_wyslana, polecony_przez)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [email.toLowerCase().trim(), hash, new Date().toISOString(), new Date().toISOString(), wymaganaWeryfikacja ? 0 : 1, token, wygasa, wymaganaWeryfikacja ? new Date().toISOString() : null, kodPolecajacy],
             async function (err) {
                 if (err) {
                     if (err.message.includes('UNIQUE')) {
@@ -1228,6 +1238,20 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                     [plan, limity.tokeny, limity.produkty, String(userId)]
                 );
                 console.log(`💳 Płatność potwierdzona - użytkownik ${userId} aktywował plan ${plan}.`);
+                // Powiadomienie na Discorda o KAŻDEJ nowej sprzedaży - w
+                // przeciwieństwie do alertów błędów (wyslijAlertDiscord),
+                // to zdarzenie NIE jest tłumione, bo sprzedaż jest rzadkim,
+                // wartym natychmiastowej uwagi wydarzeniem, nie potencjalnym
+                // zalewem powtarzających się błędów.
+                if (process.env.DISCORD_WEBHOOK_URL) {
+                    const user = await dbGetAsync(`SELECT email, polecony_przez FROM users WHERE id = ?`, [userId]).catch(() => null);
+                    const zPolecenia = user?.polecony_przez ? ` (polecenie: ${user.polecony_przez})` : '';
+                    fetch(process.env.DISCORD_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: `💰 **Nowa sprzedaż!** ${user?.email || `user #${userId}`} kupił plan **${plan}** (${limity.cena_mc} zł/mies.)${zPolecenia}` })
+                    }).catch(() => {});
+                }
                 break;
             }
             case 'invoice.payment_succeeded': {
@@ -1278,7 +1302,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                 // FREE (nie zostaje bez konta, tylko traci uprawnienia
                 // planu płatnego).
                 const subscription = zdarzenie.data.object;
-                const user = await dbGetAsync(`SELECT id FROM users WHERE stripe_customer_id = ?`, [subscription.customer]);
+                const user = await dbGetAsync(`SELECT id, email FROM users WHERE stripe_customer_id = ?`, [subscription.customer]);
                 if (!user) break;
                 const wolny = LIMITY_PLANOW.FREE;
                 await dbRunAsync(`UPDATE users SET stripe_subscription_id = NULL WHERE id = ?`, [user.id]);
@@ -1287,6 +1311,13 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                     [wolny.tokeny, wolny.produkty, String(user.id)]
                 );
                 console.log(`❌ Subskrypcja zakończona - użytkownik ${user.id} wrócił do planu FREE.`);
+                if (process.env.DISCORD_WEBHOOK_URL) {
+                    fetch(process.env.DISCORD_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: `😢 **Rezygnacja** - ${user.email} anulował subskrypcję, wrócił do planu FREE.` })
+                    }).catch(() => {});
+                }
                 break;
             }
             default:
@@ -1344,6 +1375,84 @@ app.post('/api/admin/nadaj-plan', (req, res) => {
                 res.json({ success: true, email, plan, tokeny_ai: limity.tokeny, limit_produktow: limity.produkty });
             }
         );
+    });
+});
+
+// Lista wszystkich klientów przyprowadzonych przez link polecający
+// (?ref=...) - żeby ręcznie policzyć, komu ile prowizji się należy, bez
+// grzebania bezpośrednio w bazie danych. Ten sam schemat ochrony co
+// /api/admin/nadaj-plan (sekret w treści zapytania, porównanie w stałym
+// czasie).
+app.post('/api/admin/polecenia', (req, res) => {
+    if (!process.env.ADMIN_SECRET) {
+        return res.status(403).json({ success: false, error: 'Ta funkcja jest wyłączona (brak ADMIN_SECRET w zmiennych środowiskowych).' });
+    }
+    const { sekret } = req.body;
+    if (!sekret || typeof sekret !== 'string') {
+        return res.status(403).json({ success: false, error: 'Brak klucza dostępu.' });
+    }
+    const podanyBuf = Buffer.from(sekret);
+    const prawdziwyBuf = Buffer.from(process.env.ADMIN_SECRET);
+    const pasujeDlugosc = podanyBuf.length === prawdziwyBuf.length;
+    const pasuje = pasujeDlugosc && crypto.timingSafeEqual(podanyBuf, prawdziwyBuf);
+    if (!pasuje) {
+        return res.status(403).json({ success: false, error: 'Nieprawidłowy klucz dostępu.' });
+    }
+
+    db.all(
+        `SELECT u.email, u.polecony_przez, u.utworzono, l.plan
+         FROM users u LEFT JOIN limity_uzytkownika l ON l.user_id = CAST(u.id AS TEXT)
+         WHERE u.polecony_przez IS NOT NULL
+         ORDER BY u.polecony_przez, u.utworzono`,
+        [],
+        (err, wiersze) => {
+            if (err) return res.status(500).json({ success: false, error: 'Błąd pobierania listy poleceń.' });
+            res.json({ success: true, polecenia: wiersze });
+        }
+    );
+});
+
+// Ogólny przegląd biznesu - ilu masz łącznie użytkowników, ile na którym
+// planie, ilu realnie płaci, i przybliżony miesięczny przychód (licząc wg
+// cen z LIMITY_PLANOW - to SZACUNEK z aktualnych planów, nie dokładna kwota
+// z historii faktur Stripe, która mogłaby się różnić przy zmianach cen w
+// trakcie miesiąca). Ten sam schemat ochrony co pozostałe endpointy admina.
+app.post('/api/admin/statystyki', (req, res) => {
+    if (!process.env.ADMIN_SECRET) {
+        return res.status(403).json({ success: false, error: 'Ta funkcja jest wyłączona (brak ADMIN_SECRET w zmiennych środowiskowych).' });
+    }
+    const { sekret } = req.body;
+    if (!sekret || typeof sekret !== 'string') {
+        return res.status(403).json({ success: false, error: 'Brak klucza dostępu.' });
+    }
+    const podanyBuf = Buffer.from(sekret);
+    const prawdziwyBuf = Buffer.from(process.env.ADMIN_SECRET);
+    const pasujeDlugosc = podanyBuf.length === prawdziwyBuf.length;
+    const pasuje = pasujeDlugosc && crypto.timingSafeEqual(podanyBuf, prawdziwyBuf);
+    if (!pasuje) {
+        return res.status(403).json({ success: false, error: 'Nieprawidłowy klucz dostępu.' });
+    }
+
+    db.all(`SELECT plan, COUNT(*) AS liczba FROM limity_uzytkownika GROUP BY plan`, [], (err, wgPlanow) => {
+        if (err) return res.status(500).json({ success: false, error: 'Błąd pobierania statystyk.' });
+
+        const lacznieUzytkownikow = wgPlanow.reduce((suma, w) => suma + w.liczba, 0);
+        let placacychKlientow = 0;
+        let szacowanyPrzychodMiesieczny = 0;
+        for (const w of wgPlanow) {
+            if (PLANY_PLATNE.includes(w.plan)) {
+                placacychKlientow += w.liczba;
+                szacowanyPrzychodMiesieczny += (LIMITY_PLANOW[w.plan]?.cena_mc || 0) * w.liczba;
+            }
+        }
+
+        res.json({
+            success: true,
+            lacznie_uzytkownikow: lacznieUzytkownikow,
+            placacych_klientow: placacychKlientow,
+            szacowany_przychod_miesieczny_zl: szacowanyPrzychodMiesieczny,
+            rozklad_wg_planow: wgPlanow
+        });
     });
 });
 

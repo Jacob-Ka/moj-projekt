@@ -158,6 +158,17 @@
     <script>
         const API = '/api';
 
+        // Przechwytywanie kodu polecającego z linku (np.
+        // priceaicloud.com/landing.html?ref=creativium) - zapisujemy w
+        // localStorage, żeby przetrwało nawet jeśli ktoś najpierw obejrzy
+        // DEMO albo poklika po stronie, zanim faktycznie się zarejestruje,
+        // a nie tylko gdyby rejestrował się w tej samej chwili.
+        (function zapiszKodPolecajacy() {
+            const parametry = new URLSearchParams(window.location.search);
+            const ref = parametry.get('ref');
+            if (ref) localStorage.setItem('priceai_ref', ref.trim().slice(0, 50));
+        })();
+
         function pokazModal(typ) {
             zamknijModale();
             document.getElementById(typ + 'Modal').style.display = 'flex';
@@ -240,7 +251,7 @@
                 const res = await fetch(`${API}/register`, {
                     method: 'POST', credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, haslo, akceptujeRegulamin: true })
+                    body: JSON.stringify({ email, haslo, akceptujeRegulamin: true, poleconyPrzez: localStorage.getItem('priceai_ref') || null })
                 });
                 const data = await res.json();
                 if (data.success && data.wymaganaWeryfikacja) {
