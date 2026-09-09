@@ -470,23 +470,29 @@ async function wyslijEmail(do_, temat, htmlTresc) {
     }
 }
 
-async function wyslijMailWeryfikacyjny(email, token, originUrl) {
-    const link = `${originUrl}/api/weryfikuj-email?token=${token}`;
+// Wysyłamy KOD do wpisania, nie klikalny link. Powód: linki weryfikacyjne w
+// mailach bywają automatycznie "otwierane" przez skanery bezpieczeństwa
+// poczty firmowej/antyspamowej ZANIM prawdziwy użytkownik zdąży kliknąć -
+// to unieważnia token, zanim realnie z niego skorzysta, i wygląda jak
+// "kliknąłem, a nic się nie stało". Kod wpisywany ręcznie na stronie nie ma
+// tego problemu - żaden skaner poczty nie wpisuje kodów za użytkownika.
+async function wyslijMailWeryfikacyjny(email, kod) {
     const html = `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
             <h2 style="color:#4338ca;">Potwierdź swój adres email</h2>
-            <p>Cześć! Żeby aktywować konto w PriceAI Cloud, kliknij poniższy przycisk:</p>
+            <p>Cześć! Żeby aktywować konto w PriceAI Cloud, wpisz ten kod na stronie:</p>
             <p style="text-align:center; margin: 30px 0;">
-                <a href="${link}" style="background:#4f46e5; color:#fff; padding:14px 28px; border-radius:8px; text-decoration:none; font-weight:bold;">Potwierdź adres email</a>
+                <span style="background:#f1f5f9; color:#1e1b4b; padding:16px 32px; border-radius:8px; font-weight:bold; font-size:32px; letter-spacing:6px; display:inline-block;">${kod}</span>
             </p>
-            <p style="color:#64748b; font-size:13px;">Jeśli przycisk nie działa, skopiuj ten link do przeglądarki:<br>${link}</p>
-            <p style="color:#94a3b8; font-size:12px;">Link jest ważny przez 24 godziny. Jeśli to nie Ty zakładałeś konto, zignoruj tę wiadomość.</p>
+            <p style="color:#94a3b8; font-size:12px;">Kod jest ważny przez 30 minut. Jeśli to nie Ty zakładałeś konto, zignoruj tę wiadomość.</p>
         </div>`;
-    return wyslijEmail(email, 'Potwierdź swój adres email - PriceAI Cloud', html);
+    return wyslijEmail(email, 'Twój kod weryfikacyjny - PriceAI Cloud', html);
 }
 
-function wygenerujTokenWeryfikacyjny() {
-    return crypto.randomBytes(32).toString('hex');
+// 6 cyfr - łatwe do przepisania z telefonu/maila, wystarczająco bezpieczne
+// przy limicie prób i krótkim czasie ważności (30 minut, patrz niżej).
+function wygenerujKodWeryfikacyjny() {
+    return String(crypto.randomInt(100000, 1000000));
 }
 
 // CAŁY blok tworzenia tabel i migracji (poniżej) jest opakowany w
@@ -794,6 +800,13 @@ db.run(`ALTER TABLE users ADD COLUMN ostatnia_weryfikacja_wyslana TEXT`, (err) =
 db.run(`ALTER TABLE users ADD COLUMN polecony_przez TEXT`, (err) => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Migracja polecony_przez:', err.message);
 });
+// Licznik nieudanych prób wpisania kodu weryfikacyjnego - chroni przed
+// zgadywaniem kodu (6 cyfr = 900 000 możliwości, bez limitu prób dałoby się
+// to brute-force'ować automatycznym skryptem). Resetuje się do 0 za każdym
+// razem, gdy wysyłamy nowy kod.
+db.run(`ALTER TABLE users ADD COLUMN proby_weryfikacji INTEGER DEFAULT 0`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja proby_weryfikacji:', err.message);
+});
 }); // koniec db.serialize() dla tworzenia tabel i migracji
 
 // UWAGA: ta funkcja MUSI być zdefiniowana na poziomie globalnym pliku (poza
@@ -887,17 +900,21 @@ app.post('/api/register', async (req, res) => {
     try {
         const hash = await bcrypt.hash(haslo, 10);
         const wymaganaWeryfikacja = weryfikacjaEmailAktywna();
-        const token = wymaganaWeryfikacja ? wygenerujTokenWeryfikacyjny() : null;
-        const wygasa = wymaganaWeryfikacja ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
+        const kod = wymaganaWeryfikacja ? wygenerujKodWeryfikacyjny() : null;
+        // 30 minut, nie 24h jak przy poprzednim, klikalnym linku - krótszy
+        // czas ważności ma sens dla 6-cyfrowego kodu (mniejsza przestrzeń
+        // możliwości niż długi token, więc krócej "wystawiony" na próby
+        // zgadnięcia) i tak wystarcza, żeby normalnie zdążyć sprawdzić pocztę.
+        const wygasa = wymaganaWeryfikacja ? new Date(Date.now() + 30 * 60 * 1000).toISOString() : null;
         // Kod z linku polecającego (np. ?ref=creativium) - przycinamy do
         // rozsądnej długości i tylko bezpieczne znaki, żeby ktoś nie wpisał
         // tu czegoś dziwnego ręcznie manipulując zapytaniem.
         const kodPolecajacy = typeof poleconyPrzez === 'string' ? poleconyPrzez.trim().slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '') || null : null;
 
         db.run(
-            `INSERT INTO users (email, haslo_hash, utworzono, regulamin_zaakceptowano, email_zweryfikowany, token_weryfikacyjny, token_weryfikacyjny_wygasa, ostatnia_weryfikacja_wyslana, polecony_przez)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [email.toLowerCase().trim(), hash, new Date().toISOString(), new Date().toISOString(), wymaganaWeryfikacja ? 0 : 1, token, wygasa, wymaganaWeryfikacja ? new Date().toISOString() : null, kodPolecajacy],
+            `INSERT INTO users (email, haslo_hash, utworzono, regulamin_zaakceptowano, email_zweryfikowany, token_weryfikacyjny, token_weryfikacyjny_wygasa, ostatnia_weryfikacja_wyslana, polecony_przez, proby_weryfikacji)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            [email.toLowerCase().trim(), hash, new Date().toISOString(), new Date().toISOString(), wymaganaWeryfikacja ? 0 : 1, kod, wygasa, wymaganaWeryfikacja ? new Date().toISOString() : null, kodPolecajacy],
             async function (err) {
                 if (err) {
                     if (err.message.includes('UNIQUE')) {
@@ -915,10 +932,9 @@ app.post('/api/register', async (req, res) => {
                         req.session.isGuest = false;
                         return res.json({ success: true, email, wymaganaWeryfikacja: false });
                     }
-                    const originUrl = `${req.protocol}://${req.get('host')}`;
-                    await wyslijMailWeryfikacyjny(email, token, originUrl);
+                    await wyslijMailWeryfikacyjny(email, kod);
                     // ŚWIADOMIE nie logujemy użytkownika od razu - musi
-                    // najpierw kliknąć link w mailu. Konto istnieje w bazie
+                    // najpierw wpisać kod z maila. Konto istnieje w bazie
                     // (limity już utworzone), ale jest bezużyteczne bez
                     // potwierdzenia (patrz blokada w /api/login niżej).
                     res.json({ success: true, email, wymaganaWeryfikacja: true });
@@ -930,34 +946,50 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// Klient klika link z maila -> potwierdzamy token, oznaczamy konto jako
-// zweryfikowane, i od razu logujemy (jeden klik = zweryfikowany + zalogowany,
-// zamiast każenia mu jeszcze raz wpisywać hasło).
-app.get('/api/weryfikuj-email', async (req, res) => {
-    const { token } = req.query;
-    if (!token) return res.redirect('/landing.html?weryfikacja=blad');
+// Klient wpisuje kod otrzymany mailem -> potwierdzamy, oznaczamy konto jako
+// zweryfikowane, i od razu logujemy (jedno wpisanie kodu = zweryfikowany +
+// zalogowany, zamiast każenia mu jeszcze raz wpisywać hasło).
+app.post('/api/weryfikuj-kod', async (req, res) => {
+    const { email, kod } = req.body;
+    if (!email || !kod) return res.status(400).json({ success: false, error: 'Podaj email i kod.' });
 
     try {
-        const user = await dbGetAsync(`SELECT id, email, token_weryfikacyjny_wygasa FROM users WHERE token_weryfikacyjny = ?`, [token]);
-        if (!user) return res.redirect('/landing.html?weryfikacja=blad');
-        if (new Date(user.token_weryfikacyjny_wygasa) < new Date()) {
-            return res.redirect('/landing.html?weryfikacja=wygasl');
+        const user = await dbGetAsync(
+            `SELECT id, email, token_weryfikacyjny, token_weryfikacyjny_wygasa, proby_weryfikacji FROM users WHERE email = ?`,
+            [email.toLowerCase().trim()]
+        );
+        if (!user || !user.token_weryfikacyjny) {
+            return res.status(400).json({ success: false, error: 'Nieprawidłowy kod.' });
         }
+        // Limit 5 prób na jeden wysłany kod - chroni przed automatycznym
+        // zgadywaniem (900 000 możliwych kodów, ale bez limitu prób ktoś
+        // mógłby to sprawdzić skryptem w rozsądnym czasie).
+        if (user.proby_weryfikacji >= 5) {
+            return res.status(429).json({ success: false, error: 'Zbyt wiele nieudanych prób. Poproś o nowy kod.' });
+        }
+        if (new Date(user.token_weryfikacyjny_wygasa) < new Date()) {
+            return res.status(400).json({ success: false, error: 'Kod wygasł. Poproś o nowy.' });
+        }
+        if (String(kod).trim() !== user.token_weryfikacyjny) {
+            await dbRunAsync(`UPDATE users SET proby_weryfikacji = proby_weryfikacji + 1 WHERE id = ?`, [user.id]);
+            return res.status(400).json({ success: false, error: 'Nieprawidłowy kod.' });
+        }
+
         await dbRunAsync(
-            `UPDATE users SET email_zweryfikowany = 1, token_weryfikacyjny = NULL, token_weryfikacyjny_wygasa = NULL WHERE id = ?`,
+            `UPDATE users SET email_zweryfikowany = 1, token_weryfikacyjny = NULL, token_weryfikacyjny_wygasa = NULL, proby_weryfikacji = 0 WHERE id = ?`,
             [user.id]
         );
         req.session.userId = String(user.id);
         req.session.email = user.email;
         req.session.isGuest = false;
-        res.redirect('/index.html?weryfikacja=sukces');
+        res.json({ success: true, email: user.email });
     } catch (e) {
-        console.error('Błąd weryfikacji emaila:', e.message);
-        res.redirect('/landing.html?weryfikacja=blad');
+        console.error('Błąd weryfikacji kodu:', e.message);
+        res.status(500).json({ success: false, error: 'Błąd weryfikacji.' });
     }
 });
 
-// Klient, który zgubił/nie dostał maila weryfikacyjnego, może poprosić o
+// Klient, który zgubił/nie dostał kodu weryfikacyjnego, może poprosić o
 // nowy. Ograniczone do jednej próby na 60 sekund per konto - zapobiega
 // zasypywaniu czyjejś skrzynki (albo naszego limitu Resend) powtarzanymi
 // kliknięciami. Odpowiedź jest ZAWSZE taka sama, niezależnie czy email
@@ -965,7 +997,7 @@ app.get('/api/weryfikuj-email', async (req, res) => {
 // sprawdzania, czyj email jest u nas zarejestrowany.
 app.post('/api/wyslij-ponownie-weryfikacje', async (req, res) => {
     const { email } = req.body;
-    const odpowiedzOgolna = { success: true, message: 'Jeśli to konto istnieje i wymaga weryfikacji, wysłaliśmy nowy link.' };
+    const odpowiedzOgolna = { success: true, message: 'Jeśli to konto istnieje i wymaga weryfikacji, wysłaliśmy nowy kod.' };
     if (!email || !weryfikacjaEmailAktywna()) return res.json(odpowiedzOgolna);
 
     try {
@@ -974,14 +1006,13 @@ app.post('/api/wyslij-ponownie-weryfikacje', async (req, res) => {
         if (user.ostatnia_weryfikacja_wyslana && (Date.now() - new Date(user.ostatnia_weryfikacja_wyslana).getTime()) < 60000) {
             return res.json(odpowiedzOgolna); // limit czasowy - milczymy, jakby wysłano
         }
-        const token = wygenerujTokenWeryfikacyjny();
-        const wygasa = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const kod = wygenerujKodWeryfikacyjny();
+        const wygasa = new Date(Date.now() + 30 * 60 * 1000).toISOString();
         await dbRunAsync(
-            `UPDATE users SET token_weryfikacyjny = ?, token_weryfikacyjny_wygasa = ?, ostatnia_weryfikacja_wyslana = ? WHERE id = ?`,
-            [token, wygasa, new Date().toISOString(), user.id]
+            `UPDATE users SET token_weryfikacyjny = ?, token_weryfikacyjny_wygasa = ?, ostatnia_weryfikacja_wyslana = ?, proby_weryfikacji = 0 WHERE id = ?`,
+            [kod, wygasa, new Date().toISOString(), user.id]
         );
-        const originUrl = `${req.protocol}://${req.get('host')}`;
-        await wyslijMailWeryfikacyjny(email, token, originUrl);
+        await wyslijMailWeryfikacyjny(email, kod);
         res.json(odpowiedzOgolna);
     } catch (e) {
         res.json(odpowiedzOgolna);

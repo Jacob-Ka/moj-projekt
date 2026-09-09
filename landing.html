@@ -149,7 +149,11 @@
             <div id="registerSukcesWeryfikacja" style="display:none; text-align:center; padding: 10px 0;">
                 <div style="font-size:40px; margin-bottom:12px;">📬</div>
                 <h2 data-i18n="verify_email_sent_title" style="margin-bottom:10px;"></h2>
-                <p style="color:#94a3b8; font-size:14px;" data-i18n="verify_email_sent_desc"></p>
+                <p style="color:#94a3b8; font-size:14px; margin-bottom:20px;" data-i18n="verify_email_sent_desc"></p>
+                <div class="modal-error" id="weryfikacjaKoduError"></div>
+                <input type="text" id="weryfikacjaKoduInput" inputmode="numeric" maxlength="6" placeholder="123456" style="text-align:center; font-size:24px; letter-spacing:8px; font-weight:bold;">
+                <button class="btn-primary" data-i18n="verify_code_btn" onclick="zweryfikujKod()"></button>
+                <div class="switch-link"><a onclick="wyslijPonownieWeryfikacjeZRejestracji()" data-i18n="resend_verification_link"></a></div>
             </div>
         </div>
     </div>
@@ -235,6 +239,8 @@
             resendWrapper.innerHTML = `<span style="color:#4ade80; font-size:13px;">${t('verify_email_resent')}</span>`;
         }
 
+        let emailDoWeryfikacji = ''; // zapamiętane po rejestracji, żeby nie każenia użytkownika wpisywać email drugi raz przy wpisywaniu kodu
+
         async function zarejestruj() {
             const email = document.getElementById('registerEmail').value;
             const haslo = document.getElementById('registerHaslo').value;
@@ -256,8 +262,9 @@
                 const data = await res.json();
                 if (data.success && data.wymaganaWeryfikacja) {
                     // Konto istnieje, ale NIE loguje automatycznie - musi
-                    // najpierw kliknąć link w mailu. Pokazujemy komunikat
-                    // "sprawdź skrzynkę" zamiast od razu przenosić do panelu.
+                    // najpierw wpisać kod z maila. Pokazujemy pole do
+                    // wpisania kodu zamiast od razu przenosić do panelu.
+                    emailDoWeryfikacji = email;
                     document.getElementById('registerFormWrapper').style.display = 'none';
                     document.getElementById('registerSukcesWeryfikacja').style.display = 'block';
                 } else if (data.success) {
@@ -270,18 +277,44 @@
             }
         }
 
-        // Obsługa powrotu z linku weryfikacyjnego w mailu, gdy token był
-        // nieprawidłowy lub wygasł (sukces przenosi od razu do index.html,
-        // więc tutaj lądujemy tylko przy problemie).
-        (function obslugaWynikuWeryfikacji() {
-            const parametry = new URLSearchParams(window.location.search);
-            const wynik = parametry.get('weryfikacja');
-            if (wynik === 'blad' || wynik === 'wygasl') {
-                pokazModal('login');
-                document.getElementById('loginError').innerText = wynik === 'wygasl' ? t('verify_link_expired') : t('verify_link_invalid');
-                window.history.replaceState({}, document.title, window.location.pathname);
+        async function zweryfikujKod() {
+            const kod = document.getElementById('weryfikacjaKoduInput').value.trim();
+            const errEl = document.getElementById('weryfikacjaKoduError');
+            errEl.innerText = '';
+            if (!/^\d{6}$/.test(kod)) {
+                errEl.innerText = t('verify_code_invalid_format');
+                return;
             }
-        })();
+            try {
+                const res = await fetch(`${API}/weryfikuj-kod`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: emailDoWeryfikacji, kod })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = 'index.html?weryfikacja=sukces';
+                } else {
+                    errEl.innerText = data.error || 'Błąd weryfikacji.';
+                }
+            } catch (e) {
+                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+            }
+        }
+
+        async function wyslijPonownieWeryfikacjeZRejestracji() {
+            if (!emailDoWeryfikacji) return;
+            const errEl = document.getElementById('weryfikacjaKoduError');
+            try {
+                await fetch(`${API}/wyslij-ponownie-weryfikacje`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: emailDoWeryfikacji })
+                });
+            } catch (e) { /* ciche niepowodzenie - komunikat i tak jest zawsze taki sam */ }
+            errEl.style.color = '#4ade80';
+            errEl.innerText = t('verify_email_resent');
+        }
     </script>
 </body>
 </html>

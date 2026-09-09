@@ -373,9 +373,9 @@ function obslugaPowrotuZeStripe() {
     } else if (wynikCheckoutu === 'cancelled') {
         pokazToast(t('checkout_cancelled_msg'), 'info');
     }
-    // Powrót z linku weryfikacyjnego w mailu (patrz obsluga w
-    // /api/weryfikuj-email, która przekierowuje tutaj z tym parametrem po
-    // udanym potwierdzeniu adresu email).
+    // Przekierowanie po udanej weryfikacji kodu na landing.html (patrz
+    // /api/weryfikuj-kod) - klient wpisuje 6-cyfrowy kod z maila, po
+    // potwierdzeniu trafia tutaj z tym parametrem w adresie.
     if (parametry.get('weryfikacja') === 'sukces') {
         pokazToast(t('verify_success_msg'), 'success');
     }
