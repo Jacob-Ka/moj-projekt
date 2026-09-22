@@ -185,7 +185,14 @@ async function wczytajKonfiguracje() {
     if (dailyToggle) dailyToggle.checked = !!dane.daily_auto_sync;
 
     const globalToggle = document.getElementById('globalAutoPricing');
-    if (globalToggle) globalToggle.checked = dane.global_auto_pricing !== 0;
+    // Domyślnie WYŁĄCZONE dla nowego użytkownika (dane.global_auto_pricing
+    // === undefined, bo jeszcze nigdy nic nie zapisał) - dopiero po
+    // świadomym zapisaniu konfiguracji z zaznaczonym przełącznikiem
+    // (wartość 1) faktycznie się włącza. Wcześniej było odwrotnie (domyślnie
+    // WŁĄCZONE), co oznaczało, że harmonogram od razu, bez pytania,
+    // realnie zmieniał ceny w prawdziwym sklepie nowego klienta - zbyt
+    // ryzykowne pierwsze wrażenie, zanim ktoś zdąży zaufać sugestiom AI.
+    if (globalToggle) globalToggle.checked = dane.global_auto_pricing === 1;
 
     const trybSelect = document.getElementById('trybCenowy');
     if (trybSelect) trybSelect.value = dane.tryb_cenowy || 'AI';

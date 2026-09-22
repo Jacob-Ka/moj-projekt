@@ -2298,7 +2298,13 @@ app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
         });
     }
 
-    const autoPricingWartosc = globalAutoPricing === false ? 0 : 1;
+    // Bezpieczny domyślny wybór: jeśli pole w ogóle nie przyszło (albo
+    // przyszło jako cokolwiek innego niż dosłownie `true`), auto-pricing
+    // jest WYŁĄCZONY - zgodnie z tym samym, bezpiecznym wzorcem co front-end
+    // (patrz komentarz przy globalToggle w script.js). Harmonogram nigdy
+    // nie zacznie samodzielnie zmieniać cen w czyimś sklepie, dopóki klient
+    // sam, świadomie tego nie włączy.
+    const autoPricingWartosc = globalAutoPricing === true ? 1 : 0;
     const trybCenowyWartosc = (trybCenowy === 'PROCENT_PONIZEJ_KONKURENCJI' || trybCenowy === 'DOPASUJ_KONKURENCJE') ? trybCenowy : 'AI';
     const wartoscRegulyWartosc = (typeof wartoscReguly === 'number' && wartoscReguly > 0) ? wartoscReguly : 5;
 
@@ -2535,7 +2541,10 @@ app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
         const liczbaObecnych = (istniejace || []).length;
 
         const konfiguracja = await dbGetAsync(`SELECT global_auto_pricing FROM konfiguracja WHERE user_id = ?`, [userId]);
-        const autoPricing = (konfiguracja && konfiguracja.global_auto_pricing === 0) ? 0 : 1;
+        // Ten sam bezpieczny domyślny wybór co przy imporcie z
+        // WooCommerce/Shopify - WYŁĄCZONE, dopóki klient sam świadomie nie
+        // włączy (patrz komentarz przy autoPricingWartosc wyżej w pliku).
+        const autoPricing = (konfiguracja && konfiguracja.global_auto_pricing === 1) ? 1 : 0;
         const dzis = new Date().toLocaleDateString('pl-PL');
         const terazTekst = new Date().toLocaleString('pl-PL');
 
@@ -2602,9 +2611,11 @@ app.post('/api/produkty', wymagajSesji, (req, res) => {
             }
 
             // Nowy produkt dziedziczy domyślny stan Auto-pricingu z ostatnio
-            // zapisanego globalnego przełącznika w konfiguracji (jeśli istnieje).
+            // zapisanego globalnego przełącznika w konfiguracji (jeśli istnieje) -
+            // bezpiecznie WYŁĄCZONY, jeśli konfiguracja jeszcze nie istnieje
+            // (patrz komentarz przy autoPricingWartosc wyżej w pliku).
             db.get(`SELECT global_auto_pricing FROM konfiguracja WHERE user_id = ?`, [userId], (errKonf, konf) => {
-                const autoPricing = (konf && konf.global_auto_pricing === 0) ? 0 : 1;
+                const autoPricing = (konf && konf.global_auto_pricing === 1) ? 1 : 0;
 
                 db.run(
                     `INSERT INTO globalne_produkty (user_id, nazwa, ean, waluta, twoja_cena, cena_bazowa, url_konkurencja, cena_konkurencji, sugerowana_cena, rekomendacja, data, kraj, auto_pricing)
