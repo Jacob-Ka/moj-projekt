@@ -526,6 +526,19 @@ function wygenerujKodWeryfikacyjny() {
     return String(crypto.randomInt(100000, 1000000));
 }
 
+async function wyslijMailResetuHasla(email, kod) {
+    const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+            <h2 style="color:#4338ca;">Reset hasła</h2>
+            <p>Cześć! Otrzymaliśmy prośbę o reset hasła do Twojego konta w PriceAI Cloud. Wpisz ten kod na stronie:</p>
+            <p style="text-align:center; margin: 30px 0;">
+                <span style="background:#f1f5f9; color:#1e1b4b; padding:16px 32px; border-radius:8px; font-weight:bold; font-size:32px; letter-spacing:6px; display:inline-block;">${kod}</span>
+            </p>
+            <p style="color:#94a3b8; font-size:12px;">Kod jest ważny przez 30 minut. Jeśli to nie Ty prosiłeś/aś o reset hasła, po prostu zignoruj tę wiadomość - Twoje hasło pozostanie bez zmian.</p>
+        </div>`;
+    return wyslijEmail(email, 'Reset hasła - PriceAI Cloud', html);
+}
+
 // CAŁY blok tworzenia tabel i migracji (poniżej) jest opakowany w
 // db.serialize() - bez tego sterownik sqlite3 NIE gwarantuje kolejności
 // wykonania kolejnych db.run(). Migracje (ALTER TABLE/UPDATE) zależą od
@@ -838,6 +851,18 @@ db.run(`ALTER TABLE users ADD COLUMN polecony_przez TEXT`, (err) => {
 db.run(`ALTER TABLE users ADD COLUMN proby_weryfikacji INTEGER DEFAULT 0`, (err) => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Migracja proby_weryfikacji:', err.message);
 });
+// Osobne pola na reset hasła (NIE dzielimy tych samych kolumn z weryfikacją
+// maila) - inaczej ktoś resetujący hasło tuż po rejestracji, zanim
+// potwierdził maila, skasowałby sobie token weryfikacyjny, i odwrotnie.
+db.run(`ALTER TABLE users ADD COLUMN token_resetu_hasla TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja token_resetu_hasla:', err.message);
+});
+db.run(`ALTER TABLE users ADD COLUMN token_resetu_hasla_wygasa TEXT`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja token_resetu_hasla_wygasa:', err.message);
+});
+db.run(`ALTER TABLE users ADD COLUMN proby_resetu_hasla INTEGER DEFAULT 0`, (err) => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Migracja proby_resetu_hasla:', err.message);
+});
 }); // koniec db.serialize() dla tworzenia tabel i migracji
 
 // UWAGA: ta funkcja MUSI być zdefiniowana na poziomie globalnym pliku (poza
@@ -1047,6 +1072,132 @@ app.post('/api/wyslij-ponownie-weryfikacje', async (req, res) => {
         res.json(odpowiedzOgolna);
     } catch (e) {
         res.json(odpowiedzOgolna);
+    }
+});
+
+// Krok 1 resetu hasła - klient podaje sam email, dostaje kod. Odpowiedź
+// jest ZAWSZE identyczna niezależnie czy konto istnieje - inaczej ten
+// endpoint dałby się wykorzystać do sprawdzania, czyj email jest u nas
+// zarejestrowany.
+app.post('/api/zapomnialem-hasla', async (req, res) => {
+    const { email } = req.body;
+    const odpowiedzOgolna = { success: true, message: 'Jeśli to konto istnieje, wysłaliśmy kod do resetu hasła.' };
+    if (!email) return res.json(odpowiedzOgolna);
+    if (!weryfikacjaEmailAktywna()) {
+        // Bez skonfigurowanej wysyłki maili nie mamy jak dostarczyć kodu -
+        // uczciwie mówimy to wprost, zamiast fałszywie obiecywać "wysłano".
+        return res.status(503).json({ success: false, error: `Reset hasła mailem jest obecnie niedostępny. Napisz do nas: ${process.env.SUPPORT_EMAIL || 'kontakt.priceaicloud@gmail.com'}` });
+    }
+
+    try {
+        const user = await dbGetAsync(`SELECT id, ostatnia_weryfikacja_wyslana FROM users WHERE email = ?`, [email.toLowerCase().trim()]);
+        if (!user) return res.json(odpowiedzOgolna);
+        // Ten sam limit 60 sekund co przy weryfikacji maila - zapobiega
+        // zasypywaniu czyjejś skrzynki powtarzanymi kliknięciami.
+        if (user.ostatnia_weryfikacja_wyslana && (Date.now() - new Date(user.ostatnia_weryfikacja_wyslana).getTime()) < 60000) {
+            return res.json(odpowiedzOgolna);
+        }
+        const kod = wygenerujKodWeryfikacyjny();
+        const wygasa = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        await dbRunAsync(
+            `UPDATE users SET token_resetu_hasla = ?, token_resetu_hasla_wygasa = ?, ostatnia_weryfikacja_wyslana = ?, proby_resetu_hasla = 0 WHERE id = ?`,
+            [kod, wygasa, new Date().toISOString(), user.id]
+        );
+        await wyslijMailResetuHasla(email, kod);
+        res.json(odpowiedzOgolna);
+    } catch (e) {
+        res.json(odpowiedzOgolna);
+    }
+});
+
+// Krok 2 resetu hasła - klient wpisuje kod z maila + nowe hasło. Po
+// udanym reszecie od razu logujemy (jedna akcja = nowe hasło + dostęp,
+// zamiast każenia mu jeszcze raz logować się osobno).
+app.post('/api/resetuj-haslo', async (req, res) => {
+    const { email, kod, noweHaslo } = req.body;
+    if (!email || !kod || !noweHaslo || noweHaslo.length < 6) {
+        return res.status(400).json({ success: false, error: 'Podaj email, kod i nowe hasło (min. 6 znaków).' });
+    }
+    try {
+        const user = await dbGetAsync(
+            `SELECT id, email, token_resetu_hasla, token_resetu_hasla_wygasa, proby_resetu_hasla FROM users WHERE email = ?`,
+            [email.toLowerCase().trim()]
+        );
+        if (!user || !user.token_resetu_hasla) {
+            return res.status(400).json({ success: false, error: 'Nieprawidłowy kod.' });
+        }
+        if (user.proby_resetu_hasla >= 5) {
+            return res.status(429).json({ success: false, error: 'Zbyt wiele nieudanych prób. Poproś o nowy kod.' });
+        }
+        if (new Date(user.token_resetu_hasla_wygasa) < new Date()) {
+            return res.status(400).json({ success: false, error: 'Kod wygasł. Poproś o nowy.' });
+        }
+        if (String(kod).trim() !== user.token_resetu_hasla) {
+            await dbRunAsync(`UPDATE users SET proby_resetu_hasla = proby_resetu_hasla + 1 WHERE id = ?`, [user.id]);
+            return res.status(400).json({ success: false, error: 'Nieprawidłowy kod.' });
+        }
+
+        const hash = await bcrypt.hash(noweHaslo, 10);
+        await dbRunAsync(
+            `UPDATE users SET haslo_hash = ?, token_resetu_hasla = NULL, token_resetu_hasla_wygasa = NULL, proby_resetu_hasla = 0 WHERE id = ?`,
+            [hash, user.id]
+        );
+        req.session.userId = String(user.id);
+        req.session.email = user.email;
+        req.session.isGuest = false;
+        res.json({ success: true, email: user.email });
+    } catch (e) {
+        console.error('Błąd resetu hasła:', e.message);
+        res.status(500).json({ success: false, error: 'Błąd resetu hasła.' });
+    }
+});
+
+// Samoobsługowe usunięcie konta (RODO - "prawo do bycia zapomnianym").
+// Wymaga podania AKTUALNEGO hasła jako potwierdzenia - to nieodwracalna
+// operacja, więc sama ważna sesja w przeglądarce to za mało (np. ktoś
+// mógłby zostawić otwartą sesję na wspólnym komputerze). Najpierw anulujemy
+// ewentualną aktywną subskrypcję w Stripe - inaczej zostałaby "osierocona"
+// (nadal próbowałaby pobierać pieniądze z karty, mimo że konto już nie
+// istnieje).
+app.post('/api/usun-konto', wymagajSesji, async (req, res) => {
+    if (req.session.isGuest) {
+        return res.status(403).json({ success: false, error: 'Konto DEMO nie wymaga usuwania - znika samo po zamknięciu przeglądarki.' });
+    }
+    const { haslo } = req.body;
+    if (!haslo) return res.status(400).json({ success: false, error: 'Podaj hasło, żeby potwierdzić usunięcie konta.' });
+
+    try {
+        const user = await dbGetAsync(`SELECT haslo_hash, stripe_subscription_id FROM users WHERE id = ?`, [req.session.userId]);
+        if (!user) return res.status(404).json({ success: false, error: 'Nie znaleziono konta.' });
+        const pasuje = await bcrypt.compare(haslo, user.haslo_hash);
+        if (!pasuje) return res.status(401).json({ success: false, error: 'Nieprawidłowe hasło.' });
+
+        if (user.stripe_subscription_id && process.env.STRIPE_SECRET_KEY) {
+            try {
+                await fetch(`https://api.stripe.com/v1/subscriptions/${user.stripe_subscription_id}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` }
+                });
+            } catch (e) {
+                // Nie blokujemy usunięcia konta, nawet jeśli Stripe akurat
+                // nie odpowiada - lepiej zostawić subskrypcję do ręcznego
+                // anulowania niż zablokować komuś prawo do usunięcia
+                // danych. Logujemy, żeby o tym nie zapomnieć.
+                console.error(`⚠️  Nie udało się anulować subskrypcji ${user.stripe_subscription_id} przy usuwaniu konta ${req.session.userId}:`, e.message);
+            }
+        }
+
+        const userId = req.session.userId;
+        for (const tabela of ['globalne_produkty', 'konfiguracja', 'historia_zmian_cen', 'zamowienia', 'magazyn', 'przebiegi_harmonogramu', 'powiadomienia', 'limity_uzytkownika']) {
+            await dbRunAsync(`DELETE FROM ${tabela} WHERE user_id = ?`, [userId]);
+        }
+        await dbRunAsync(`DELETE FROM users WHERE id = ?`, [userId]);
+
+        req.session.destroy(() => {});
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Błąd usuwania konta:', e.message);
+        res.status(500).json({ success: false, error: 'Błąd usuwania konta.' });
     }
 });
 

@@ -362,6 +362,32 @@ async function zarzadzajSubskrypcja() {
     }
 }
 
+function otworzUsuniecieKonta() {
+    document.getElementById('planModal').style.display = 'none';
+    document.getElementById('usunKontoError').innerText = '';
+    document.getElementById('usunKontoHaslo').value = '';
+    document.getElementById('usunKontoModal').style.display = 'flex';
+}
+
+async function usunKonto() {
+    const haslo = document.getElementById('usunKontoHaslo').value;
+    const errEl = document.getElementById('usunKontoError');
+    errEl.innerText = '';
+    if (!haslo) { errEl.innerText = t('reset_password_too_short'); return; }
+    const data = await apiFetch('/usun-konto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ haslo })
+    });
+    if (data?.success) {
+        // Konto i cała jego zawartość skasowane po stronie serwera -
+        // wracamy na stronę logowania, sesja już nie istnieje.
+        window.location.href = 'landing.html';
+    } else {
+        errEl.innerText = data?.error || t('ai_error');
+    }
+}
+
 // Po powrocie ze Stripe (udana płatność albo rezygnacja) - pokazujemy
 // odpowiedni komunikat i czyścimy adres URL, żeby odświeżenie strony nie
 // pokazywało tego samego toasta w kółko.

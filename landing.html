@@ -126,7 +126,30 @@
             <input type="email" id="loginEmail" data-i18n-ph="login_email_ph" placeholder="Email">
             <input type="password" id="loginHaslo" data-i18n-ph="login_pass_ph" placeholder="Hasło">
             <button class="btn-primary" data-i18n="login_btn" onclick="zaloguj()"></button>
+            <div class="switch-link" style="margin-top:6px;"><a onclick="pokazModal('resetHasla')" style="color:#818cf8; font-size:13px; cursor:pointer;" data-i18n="forgot_password_link"></a></div>
             <div class="switch-link"><span data-i18n="login_switch"></span> <a onclick="pokazModal('register')" data-i18n="login_switch_link"></a></div>
+        </div>
+    </div>
+
+    <!-- Modal resetu hasła -->
+    <div class="modal-overlay" id="resetHaslaModal">
+        <div class="modal-card" style="position: relative;">
+            <button class="close-modal" onclick="zamknijModale()">&times;</button>
+            <div id="resetHaslaKrok1">
+                <h2 data-i18n="reset_password_title"></h2>
+                <p style="color:#94a3b8; font-size:13px; margin-bottom:14px;" data-i18n="reset_password_desc"></p>
+                <div class="modal-error" id="resetHaslaKrok1Error"></div>
+                <input type="email" id="resetHaslaEmail" data-i18n-ph="login_email_ph" placeholder="Email">
+                <button class="btn-primary" data-i18n="reset_password_send_btn" onclick="wyslijKodResetuHasla()"></button>
+            </div>
+            <div id="resetHaslaKrok2" style="display:none;">
+                <h2 data-i18n="reset_password_title"></h2>
+                <p style="color:#94a3b8; font-size:13px; margin-bottom:14px;" data-i18n="reset_password_code_sent_desc"></p>
+                <div class="modal-error" id="resetHaslaKrok2Error"></div>
+                <input type="text" id="resetHaslaKod" inputmode="numeric" maxlength="6" placeholder="123456" style="text-align:center; font-size:22px; letter-spacing:6px; font-weight:bold;">
+                <input type="password" id="resetHaslaNoweHaslo" data-i18n-ph="reset_password_new_pass_ph" placeholder="Nowe hasło (min. 6 znaków)">
+                <button class="btn-primary" data-i18n="reset_password_confirm_btn" onclick="potwierdzResetHasla()"></button>
+            </div>
         </div>
     </div>
 
@@ -180,6 +203,7 @@
         function zamknijModale() {
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('registerModal').style.display = 'none';
+            document.getElementById('resetHaslaModal').style.display = 'none';
             document.getElementById('loginError').innerText = '';
             document.getElementById('registerError').innerText = '';
         }
@@ -314,6 +338,59 @@
             } catch (e) { /* ciche niepowodzenie - komunikat i tak jest zawsze taki sam */ }
             errEl.style.color = '#4ade80';
             errEl.innerText = t('verify_email_resent');
+        }
+
+        let emailDoResetuHasla = '';
+
+        async function wyslijKodResetuHasla() {
+            const email = document.getElementById('resetHaslaEmail').value;
+            const errEl = document.getElementById('resetHaslaKrok1Error');
+            errEl.innerText = '';
+            if (!email) { errEl.innerText = t('login_email_ph'); return; }
+            try {
+                const res = await fetch(`${API}/zapomnialem-hasla`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    // Jedyny przypadek prawdziwego błędu tutaj: wysyłka
+                    // maili jest w ogóle wyłączona po stronie serwera -
+                    // pokazujemy to wprost, zamiast udawać sukces.
+                    errEl.innerText = data.error || 'Błąd.';
+                    return;
+                }
+                emailDoResetuHasla = email;
+                document.getElementById('resetHaslaKrok1').style.display = 'none';
+                document.getElementById('resetHaslaKrok2').style.display = 'block';
+            } catch (e) {
+                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+            }
+        }
+
+        async function potwierdzResetHasla() {
+            const kod = document.getElementById('resetHaslaKod').value.trim();
+            const noweHaslo = document.getElementById('resetHaslaNoweHaslo').value;
+            const errEl = document.getElementById('resetHaslaKrok2Error');
+            errEl.innerText = '';
+            if (!/^\d{6}$/.test(kod)) { errEl.innerText = t('verify_code_invalid_format'); return; }
+            if (!noweHaslo || noweHaslo.length < 6) { errEl.innerText = t('reset_password_too_short'); return; }
+            try {
+                const res = await fetch(`${API}/resetuj-haslo`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: emailDoResetuHasla, kod, noweHaslo })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = 'index.html';
+                } else {
+                    errEl.innerText = data.error || 'Błąd.';
+                }
+            } catch (e) {
+                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+            }
         }
     </script>
 </body>

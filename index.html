@@ -823,6 +823,25 @@
             <div id="zarzadzajSubskrypcjaWrapper" style="display:none; text-align:center; margin-top:18px; padding-top:18px; border-top:1px solid #334155;">
                 <button class="btn-secondary" onclick="zarzadzajSubskrypcja()" data-i18n="btn_manage_subscription"></button>
             </div>
+            <div style="text-align:center; margin-top:18px; padding-top:18px; border-top:1px solid #334155; font-size:13px; color:#64748b;">
+                <p style="margin-bottom:10px;">
+                    <span data-i18n="support_contact_label"></span>
+                    <a href="mailto:kontakt.priceaicloud@gmail.com" style="color:#818cf8;">kontakt.priceaicloud@gmail.com</a>
+                </p>
+                <a onclick="otworzUsuniecieKonta()" style="color:#f87171; cursor:pointer;" data-i18n="delete_account_link"></a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: usunięcie konta (RODO) -->
+    <div class="modal-overlay" id="usunKontoModal">
+        <div class="modal-card small" style="position: relative;">
+            <button class="close-modal" onclick="document.getElementById('usunKontoModal').style.display='none'">&times;</button>
+            <h3 data-i18n="delete_account_title" style="color:#f87171;"></h3>
+            <p style="color:#cbd5e1; font-size:13px; margin-bottom:16px;" data-i18n="delete_account_warning"></p>
+            <div class="modal-error" id="usunKontoError"></div>
+            <input type="password" id="usunKontoHaslo" data-i18n-ph="login_pass_ph" placeholder="Hasło">
+            <button class="btn-cancel" style="width:100%; background:#dc2626;" data-i18n="delete_account_confirm_btn" onclick="usunKonto()"></button>
         </div>
     </div>
 
