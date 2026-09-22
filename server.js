@@ -2282,7 +2282,7 @@ app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
     if (req.session.isGuest) {
         return res.status(403).json({ success: false, error: 'Konto DEMO nie może podłączyć prawdziwego sklepu - załóż darmowe konto, żeby korzystać z tej funkcji.' });
     }
-    const { storeUrl, consumerKey, consumerSecret, waluta, rynek, autoRepriceTime, dailyAutoSync, globalAutoPricing, trybCenowy, wartoscReguly, platforma } = req.body;
+    const { storeUrl, consumerKey, consumerSecret, waluta, rynek, autoRepriceTime, dailyAutoSync, globalAutoPricing, trybCenowy, wartoscReguly, platforma, cenyZawierajaVat, stawkaVat } = req.body;
     const userId = req.session.userId;
     const platformaWartosc = (platforma === 'shopify' || platforma === 'csv') ? platforma : 'woocommerce';
 
@@ -2307,10 +2307,17 @@ app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
     const autoPricingWartosc = globalAutoPricing === true ? 1 : 0;
     const trybCenowyWartosc = (trybCenowy === 'PROCENT_PONIZEJ_KONKURENCJI' || trybCenowy === 'DOPASUJ_KONKURENCJE') ? trybCenowy : 'AI';
     const wartoscRegulyWartosc = (typeof wartoscReguly === 'number' && wartoscReguly > 0) ? wartoscReguly : 5;
+    // Ręczne ustawienie VAT z formularza - jeśli klient wpisał konkretną
+    // stawkę, traktujemy to jako ŚWIADOMY wybór, który ma pierwszeństwo
+    // przed jakąkolwiek automatyczną detekcją (patrz niżej). Puste pole
+    // (null) oznacza "nie wiem/nie ustawiam" - dla WooCommerce pozwoli to
+    // zadziałać automatycznemu wykrywaniu z ustawień sklepu.
+    const stawkaVatReczna = (typeof stawkaVat === 'number' && stawkaVat >= 0) ? stawkaVat : null;
+    const zawieraVatWartosc = cenyZawierajaVat === false ? 0 : 1;
 
     db.run(
-        `INSERT INTO konfiguracja (user_id, platforma, store_url, consumer_key, consumer_secret, waluta, rynek, auto_reprice_time, daily_auto_sync, global_auto_pricing, tryb_cenowy, wartosc_reguly, zapisano)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO konfiguracja (user_id, platforma, store_url, consumer_key, consumer_secret, waluta, rynek, auto_reprice_time, daily_auto_sync, global_auto_pricing, tryb_cenowy, wartosc_reguly, ceny_zawieraja_vat, stawka_vat, zapisano)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
             platforma = excluded.platforma,
             store_url = excluded.store_url, consumer_key = excluded.consumer_key, consumer_secret = excluded.consumer_secret,
@@ -2318,8 +2325,9 @@ app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
             auto_reprice_time = excluded.auto_reprice_time, daily_auto_sync = excluded.daily_auto_sync,
             global_auto_pricing = excluded.global_auto_pricing,
             tryb_cenowy = excluded.tryb_cenowy, wartosc_reguly = excluded.wartosc_reguly,
+            ceny_zawieraja_vat = excluded.ceny_zawieraja_vat, stawka_vat = excluded.stawka_vat,
             zapisano = excluded.zapisano`,
-        [userId, platformaWartosc, storeUrl, consumerKey ? zaszyfrujSekret(consumerKey) : '', zaszyfrujSekret(consumerSecret), waluta, rynek, autoRepriceTime, dailyAutoSync ? 1 : 0, autoPricingWartosc, trybCenowyWartosc, wartoscRegulyWartosc, new Date().toISOString()],
+        [userId, platformaWartosc, storeUrl, consumerKey ? zaszyfrujSekret(consumerKey) : '', zaszyfrujSekret(consumerSecret), waluta, rynek, autoRepriceTime, dailyAutoSync ? 1 : 0, autoPricingWartosc, trybCenowyWartosc, wartoscRegulyWartosc, zawieraVatWartosc, stawkaVatReczna, new Date().toISOString()],
         async (err) => {
             if (err) return res.status(500).json({ success: false, error: 'Błąd zapisu konfiguracji.' });
 
@@ -2330,9 +2338,13 @@ app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
                 await dbRunAsync(`UPDATE globalne_produkty SET auto_pricing = ? WHERE user_id = ?`, [autoPricingWartosc, userId]);
             } catch (e) { /* nieblokujące - kontynuuj mimo błędu */ }
 
-            // Wykrywanie VAT działa na razie tylko dla WooCommerce (Shopify ma
-            // inny model podatkowy - do dodania osobno, jeśli okaże się potrzebne).
-            if (platformaWartosc === 'woocommerce') {
+            // Automatyczne wykrywanie VAT z ustawień WooCommerce - TYLKO gdy
+            // klient NIE podał ręcznie stawki (zostawił pole puste). Jeśli
+            // podał ręcznie, jego wybór już został zapisany wyżej i NIE
+            // nadpisujemy go automatyczną detekcją - inaczej ręczna korekta
+            // błędnie wykrytej wartości byłaby bezużyteczna (znikałaby przy
+            // każdym kolejnym zapisie konfiguracji).
+            if (platformaWartosc === 'woocommerce' && stawkaVatReczna === null) {
                 try {
                     const vat = await pobierzUstawieniaVatSklepu(storeUrl, consumerKey, consumerSecret);
                     await dbRunAsync(`UPDATE konfiguracja SET ceny_zawieraja_vat = ?, stawka_vat = ? WHERE user_id = ?`, [vat.zawieraVat ? 1 : 0, vat.stawka, userId]);

@@ -337,6 +337,27 @@
                 <div class="global-toggle-row" style="flex-direction:column; align-items:stretch; gap:12px;">
                     <div>
                         <div class="global-toggle-info label-with-tip">
+                            🧾 Ustawienia VAT
+                            <span class="tooltip-icon" data-tip="Ceny konkurencji, które widzisz publicznie w sklepach, są zwykle cenami brutto (z VAT). Żeby porównanie z Twoją ceną było uczciwe, musimy wiedzieć, czy Twoje ceny w sklepie też zawierają VAT, i jaka jest stawka. Dla WooCommerce próbujemy to wykryć automatycznie z ustawień sklepu - poniżej możesz to sprawdzić i w razie potrzeby poprawić ręcznie. Dla Shopify i CSV wykrywanie automatyczne nie działa - ustaw to ręcznie, inaczej porównania i sugerowane ceny mogą być błędne o całą stawkę VAT.">(co to znaczy?)</span>
+                        </div>
+                        <div class="global-toggle-sub">Dla WooCommerce wykrywamy to automatycznie przy podłączaniu sklepu - poniższe pola możesz zostawić puste, chyba że chcesz nadpisać wykrytą wartość. Dla Shopify i CSV ustaw to ręcznie.</div>
+                    </div>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+                        <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#cbd5e1; cursor:pointer;">
+                            <input type="checkbox" id="cenyZawierajaVat" checked>
+                            Moje ceny w sklepie zawierają VAT (brutto)
+                        </label>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:13px; color:#94a3b8;">Stawka VAT:</span>
+                            <input type="number" id="stawkaVat" placeholder="np. 23" min="0" max="100" step="0.5" style="width:80px;">
+                            <span style="color:#94a3b8; font-size:13px;">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="global-toggle-row" style="flex-direction:column; align-items:stretch; gap:12px;">
+                    <div>
+                        <div class="global-toggle-info label-with-tip">
                             🛡️ Domyślny procent Floor Price
                             <span class="tooltip-icon" data-tip="Floor Price to najniższa cena, poniżej której system nigdy nie zejdzie. To ustawienie dotyczy WSZYSTKICH produktów, chyba że konkretny produkt ma własne, indywidualne ustawienie (edytowalne w tabeli produktów). Przykład: 80% oznacza, że przy cenie 120 zł Floor Price wyniesie 96 zł.">(co to znaczy?)</span>
                         </div>

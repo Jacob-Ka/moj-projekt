@@ -194,6 +194,15 @@ async function wczytajKonfiguracje() {
     // ryzykowne pierwsze wrażenie, zanim ktoś zdąży zaufać sugestiom AI.
     if (globalToggle) globalToggle.checked = dane.global_auto_pricing === 1;
 
+    // Ustawienia VAT - domyślnie "ceny zawierają VAT" zaznaczone (najczęstsza
+    // praktyka B2C) dla nowego użytkownika, ale odzwierciedla realnie
+    // zapisaną wartość, jeśli już istnieje (np. wykrytą automatycznie dla
+    // WooCommerce, albo ustawioną ręcznie wcześniej).
+    const vatToggle = document.getElementById('cenyZawierajaVat');
+    if (vatToggle) vatToggle.checked = dane.ceny_zawieraja_vat !== 0;
+    const stawkaVatInput = document.getElementById('stawkaVat');
+    if (stawkaVatInput) stawkaVatInput.value = (dane.stawka_vat !== undefined && dane.stawka_vat !== null) ? dane.stawka_vat : '';
+
     const trybSelect = document.getElementById('trybCenowy');
     if (trybSelect) trybSelect.value = dane.tryb_cenowy || 'AI';
     const wartoscInput = document.getElementById('wartoscReguly');
@@ -1484,6 +1493,9 @@ async function importOferty() {
     const btn = document.getElementById('btn-sync');
     if (btn) { btn.disabled = true; btn.innerText = t('connecting'); }
 
+    const stawkaVatEl = document.getElementById('stawkaVat');
+    const stawkaVatWartosc = (stawkaVatEl && stawkaVatEl.value !== '') ? parseFloat(stawkaVatEl.value) : null;
+
     const data = await apiFetch('/import-oferty', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1496,7 +1508,13 @@ async function importOferty() {
             rynek: document.getElementById('marketScope')?.value,
             autoRepriceTime: document.getElementById('autoRepriceTime')?.value,
             dailyAutoSync: document.getElementById('dailyAutoSyncToggle')?.checked,
-            globalAutoPricing: document.getElementById('globalAutoPricing')?.checked
+            globalAutoPricing: document.getElementById('globalAutoPricing')?.checked,
+            // Puste pole "Stawka VAT" = "nie wiem/nie ustawiam ręcznie" - dla
+            // WooCommerce pozwalamy wtedy zadziałać automatycznej detekcji.
+            // Wypełnione pole = świadomy wybór użytkownika, ZAWSZE wygrywa
+            // z automatyczną detekcją (patrz logika w /api/import-oferty).
+            cenyZawierajaVat: document.getElementById('cenyZawierajaVat')?.checked,
+            stawkaVat: stawkaVatWartosc
         })
     });
 
