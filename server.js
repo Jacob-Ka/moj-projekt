@@ -489,6 +489,37 @@ async function wyslijMailWeryfikacyjny(email, kod) {
     return wyslijEmail(email, 'Twój kod weryfikacyjny - PriceAI Cloud', html);
 }
 
+// Formatuje datę po polsku (np. "15 września 2026") - używane w mailach o
+// okresie próbnym, żeby klient widział jasną, czytelną datę, nie surowy
+// znacznik czasu.
+function formatujDatePl(dataIso) {
+    const miesiace = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
+    const d = new Date(dataIso);
+    return `${d.getDate()} ${miesiace[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+async function wyslijMailStartTrial(email, plan, dataKonca) {
+    const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+            <h2 style="color:#4338ca;">Twój 7-dniowy darmowy okres próbny właśnie się zaczął 🎉</h2>
+            <p>Cześć! Masz teraz pełny dostęp do planu <strong>${plan}</strong> przez 7 dni, zupełnie za darmo.</p>
+            <p>Karta, którą podałeś/aś, zostanie obciążona dopiero <strong>${formatujDatePl(dataKonca)}</strong> - dostaniesz od nas przypomnienie 3 dni wcześniej.</p>
+            <p>Jeśli w dowolnym momencie zdecydujesz, że to nie dla Ciebie, możesz anulować przez "Zarządzaj subskrypcją" w panelu - nic Cię to nie kosztuje, jeśli zrobisz to przed końcem okresu próbnego.</p>
+        </div>`;
+    return wyslijEmail(email, 'Twój darmowy okres próbny się zaczął - PriceAI Cloud', html);
+}
+
+async function wyslijMailPrzypomnienieTrial(email, plan, cena, dataKonca) {
+    const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+            <h2 style="color:#f59e0b;">Twój okres próbny kończy się za 3 dni</h2>
+            <p>Cześć! Przypominamy, że Twój darmowy okres próbny planu <strong>${plan}</strong> kończy się <strong>${formatujDatePl(dataKonca)}</strong>.</p>
+            <p>Od tego dnia z podanej karty automatycznie pobierzemy <strong>${cena} zł</strong> za pierwszy miesiąc.</p>
+            <p>Jeśli chcesz zrezygnować, zrób to przed tą datą przez "Zarządzaj subskrypcją" w panelu - nic Cię to nie będzie kosztować.</p>
+        </div>`;
+    return wyslijEmail(email, 'Twój okres próbny kończy się za 3 dni - PriceAI Cloud', html);
+}
+
 // 6 cyfr - łatwe do przepisania z telefonu/maila, wystarczająco bezpieczne
 // przy limicie prób i krótkim czasie ważności (30 minut, patrz niżej).
 function wygenerujKodWeryfikacyjny() {
@@ -1195,7 +1226,15 @@ app.post('/api/stripe/checkout', wymagajSesji, async (req, res) => {
             // subskrypcja żyje miesiącami, i to właśnie jej metadane
             // odczytujemy przy każdym kolejnym webhooku (odnowienie,
             // zmiana planu itd.).
-            subscription_data: { metadata: { user_id: String(req.session.userId), plan } }
+            // trial_period_days: 7 - KAŻDY nowy klient (bez względu na
+            // plan) dostaje 7 dni za darmo, zanim karta zostanie
+            // pierwszy raz obciążona. Klient nadal PODAJE kartę już
+            // teraz (Stripe tego wymaga przy subskrypcji z trialem), ale
+            // nic nie płaci, dopóki nie minie 7 dni - a Stripe SAM,
+            // automatycznie, wyśle nam webhook 3 dni przed końcem
+            // (customer.subscription.trial_will_end), na podstawie
+            // którego wysyłamy klientowi przypomnienie mailem.
+            subscription_data: { trial_period_days: 7, metadata: { user_id: String(req.session.userId), plan } }
         });
 
         res.json({ success: true, url: session.url });
@@ -1283,6 +1322,38 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                         body: JSON.stringify({ content: `💰 **Nowa sprzedaż!** ${user?.email || `user #${userId}`} kupił plan **${plan}** (${limity.cena_mc} zł/mies.)${zPolecenia}` })
                     }).catch(() => {});
                 }
+                break;
+            }
+            // Subskrypcja utworzona - dla nowych klientów ZAWSZE jest to
+            // teraz subskrypcja z 7-dniowym trialem (patrz
+            // trial_period_days w /api/stripe/checkout). Jeśli subscription
+            // faktycznie jest w trialu (trial_end istnieje i jest w
+            // przyszłości), wysyłamy mail potwierdzający start okresu
+            // próbnego z dokładną datą pierwszego obciążenia.
+            case 'customer.subscription.created': {
+                const subscription = zdarzenie.data.object;
+                if (!subscription.trial_end) break; // nie ma trialu - nic do zrobienia tutaj
+                const userId = subscription.metadata?.user_id;
+                const plan = subscription.metadata?.plan;
+                if (!userId || !plan || !LIMITY_PLANOW[plan]) break;
+                const user = await dbGetAsync(`SELECT email FROM users WHERE id = ?`, [userId]);
+                if (!user) break;
+                const dataKonca = new Date(subscription.trial_end * 1000).toISOString();
+                await wyslijMailStartTrial(user.email, plan, dataKonca);
+                break;
+            }
+            // Stripe wysyła to automatycznie SAM, 3 dni przed końcem
+            // okresu próbnego - nie musimy niczego liczyć ani pilnować
+            // terminów samodzielnie, Stripe robi to za nas.
+            case 'customer.subscription.trial_will_end': {
+                const subscription = zdarzenie.data.object;
+                const userId = subscription.metadata?.user_id;
+                const plan = subscription.metadata?.plan;
+                if (!userId || !plan || !LIMITY_PLANOW[plan]) break;
+                const user = await dbGetAsync(`SELECT email FROM users WHERE id = ?`, [userId]);
+                if (!user) break;
+                const dataKonca = new Date(subscription.trial_end * 1000).toISOString();
+                await wyslijMailPrzypomnienieTrial(user.email, plan, LIMITY_PLANOW[plan].cena_mc, dataKonca);
                 break;
             }
             case 'invoice.payment_succeeded': {

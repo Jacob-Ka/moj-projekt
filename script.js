@@ -321,6 +321,7 @@ function renderujPlany(cennik) {
                 <div style="font-size:12px; color:#94a3b8; margin-bottom:18px;">/ ${jednostka}</div>
                 <div style="font-size:13px; color:#cbd5e1; margin-bottom:6px;">🎟️ ${p.tokeny} ${t('ai_tokens_label').toLowerCase()}/${t('period_month_short')}</div>
                 <div style="font-size:13px; color:#cbd5e1; margin-bottom:18px;">📦 ${p.produkty} ${t('products_label')}</div>
+                ${!aktywny ? `<div style="font-size:12px; color:#4ade80; font-weight:600; margin-bottom:14px;">✨ ${t('trial_badge')}</div>` : ''}
                 <button class="${aktywny ? 'btn-cancel' : 'btn-success'}" style="width:100%;" ${aktywny ? 'disabled' : ''} onclick="aktywujPlan('${nazwa}')">
                     ${aktywny ? t('current_plan') : t('choose_plan')}
                 </button>
