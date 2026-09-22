@@ -197,8 +197,15 @@
         <!-- ZAKŁADKA: REPRICER -->
         <div id="section-repricer" class="hub-section active">
             <div class="config-panel">
-                <h3 data-i18n="config_title"></h3>
+                <h3 onclick="przelaczPanelKonfiguracji()" style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none;">
+                    <span data-i18n="config_title"></span>
+                    <span style="display:flex; align-items:center; gap:10px;">
+                        <span id="configPanelSkrot" style="font-size:12px; font-weight:400; color:#4ade80; display:none;"></span>
+                        <span id="configPanelStrzalka" style="font-size:13px; color:#94a3b8;">▾</span>
+                    </span>
+                </h3>
 
+                <div id="configPanelBody">
                 <div class="crawler-status-box">
                     <div class="crawler-header">
                         <div class="crawler-title">
@@ -371,6 +378,7 @@
 
                 <div class="import-panel">
                     <button id="btn-sync" data-i18n="btn_save_config" onclick="importOferty()"></button>
+                </div>
                 </div>
             </div>
 

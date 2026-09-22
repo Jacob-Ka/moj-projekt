@@ -2492,6 +2492,14 @@ app.post('/api/baza/optymalizuj', wymagajSesji, (req, res) => {
 // bezpośrednio ze sklepu WooCommerce dla każdego połączonego produktu i
 // nadpisuje nią lokalną cenę, czyszcząc jednocześnie sugestię AI. Wymaga
 // zapisanej, działającej konfiguracji integracji.
+//
+// DODATKOWO (ważna zmiana): oprócz przywrócenia cen, wyłączamy też CAŁĄ
+// automatyzację (global_auto_pricing, daily_auto_sync w konfiguracji, oraz
+// auto_pricing przy każdym produkcie) - inaczej sam reset cen byłby
+// pozorny: harmonogram mógłby już następnego dnia ponownie zmienić ceny,
+// zanim klient zdąży cokolwiek świadomie zdecydować. To ma być prawdziwy
+// przycisk awaryjny "zatrzymaj wszystko i wróć do normy", nie tylko
+// jednorazowe cofnięcie przy wciąż aktywnej automatyzacji w tle.
 app.post('/api/ceny/reset-bazowe', wymagajSesji, async (req, res) => {
     const userId = req.session.userId;
     try {
@@ -2504,8 +2512,17 @@ app.post('/api/ceny/reset-bazowe', wymagajSesji, async (req, res) => {
             `SELECT * FROM globalne_produkty WHERE user_id = ? AND cena_bazowa IS NOT NULL AND cena_bazowa != twoja_cena`,
             [userId]
         );
+
+        // Wyłączamy automatyzację ZAWSZE przy tej akcji, nawet jeśli akurat
+        // nie było żadnych cen do zresetowania (np. klient kliknął to od
+        // razu po włączeniu, zanim harmonogram zdążył cokolwiek zmienić) -
+        // intencja "zatrzymaj to" powinna zadziałać niezależnie od tego,
+        // czy było już co cofać.
+        await dbRunAsync(`UPDATE konfiguracja SET global_auto_pricing = 0, daily_auto_sync = 0 WHERE user_id = ?`, [userId]);
+        await dbRunAsync(`UPDATE globalne_produkty SET auto_pricing = 0 WHERE user_id = ?`, [userId]);
+
         if (produkty.length === 0) {
-            return res.status(400).json({ success: false, error: 'Wszystkie produkty już mają cenę bazową - nie ma nic do zresetowania.' });
+            return res.json({ success: true, zresetowano: 0, wyslanoDoSklepu: 0, automatyzacjaWylaczona: true });
         }
 
         const terazTekst = new Date().toLocaleString('pl-PL');
@@ -2522,7 +2539,7 @@ app.post('/api/ceny/reset-bazowe', wymagajSesji, async (req, res) => {
             if (wynikWyslania.wyslano) wyslanoDoSklepu++;
             zresetowano++;
         }
-        res.json({ success: true, zresetowano, wyslanoDoSklepu });
+        res.json({ success: true, zresetowano, wyslanoDoSklepu, automatyzacjaWylaczona: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }

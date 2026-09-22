@@ -73,6 +73,7 @@ async function sprawdzSesje() {
         }
         if (btnPro) btnPro.style.display = !dane.demo ? 'inline-block' : 'none';
         otworzOnboardingJesliPotrzebny(dane);
+        ustawDomyslnyStanPanelu(dane);
 
         pobierzDane();
         wczytajKonfiguracje();
@@ -1581,10 +1582,10 @@ async function optymalizujBaze(btnEl) {
 }
 
 function resetCenBazowych() {
-    potwierdz('Czy na pewno chcesz przywrócić ceny bazowe (sprzed jakiejkolwiek automatycznej zmiany) dla WSZYSTKICH produktów? Tej akcji nie można cofnąć.', async () => {
+    potwierdz(t('confirm_reset_prices'), async () => {
         const data = await apiFetch('/ceny/reset-bazowe', { method: 'POST' });
         if (data?.success) {
-            pokazToast(`Przywrócono ceny bazowe dla ${data.zresetowano} produktów.`, 'success');
+            pokazToast(t('reset_prices_success').replace('{n}', data.zresetowano), 'success');
             pobierzDane();
         } else {
             pokazToast(data?.error || 'Błąd przywracania cen bazowych.', 'error');
@@ -1860,4 +1861,42 @@ function otworzOnboardingJesliPotrzebny(dane) {
     renderujKrokOnboardingu();
     const modal = document.getElementById('onboardingModal');
     if (modal) modal.style.display = 'flex';
+}
+
+// Panel "Konfiguracja integracji" jest spory (adres sklepu, klucze, VAT,
+// tryb cenowy, Floor Price, harmonogram) - świetny do wypełnienia PRZY
+// PIERWSZYM połączeniu sklepu, ale niepotrzebnie zajmuje miejsce i sprawia
+// wrażenie "ciężkiego" narzędzia, gdy ktoś, kto już wszystko skonfigurował,
+// loguje się po prostu sprawdzić swoje produkty. Domyślnie ZWINIĘTY dla
+// takiej osoby (ma już produkty - ten sam sygnał co przy onboardingu),
+// domyślnie ROZWINIĘTY dla kogoś, kto jeszcze nic nie skonfigurował i
+// faktycznie potrzebuje od razu widzieć te pola.
+function ustawDomyslnyStanPanelu(dane) {
+    const maJuzProdukty = !dane.demo && dane.liczba_produktow > 0;
+    if (maJuzProdukty) zwinPanelKonfiguracji();
+}
+
+function przelaczPanelKonfiguracji() {
+    const body = document.getElementById('configPanelBody');
+    if (!body) return;
+    if (body.style.display === 'none') rozwinPanelKonfiguracji();
+    else zwinPanelKonfiguracji();
+}
+
+function zwinPanelKonfiguracji() {
+    const body = document.getElementById('configPanelBody');
+    const strzalka = document.getElementById('configPanelStrzalka');
+    const skrot = document.getElementById('configPanelSkrot');
+    if (body) body.style.display = 'none';
+    if (strzalka) strzalka.innerText = '▸';
+    if (skrot) { skrot.innerText = '✓ ' + t('config_panel_configured'); skrot.style.display = 'inline'; }
+}
+
+function rozwinPanelKonfiguracji() {
+    const body = document.getElementById('configPanelBody');
+    const strzalka = document.getElementById('configPanelStrzalka');
+    const skrot = document.getElementById('configPanelSkrot');
+    if (body) body.style.display = 'block';
+    if (strzalka) strzalka.innerText = '▾';
+    if (skrot) skrot.style.display = 'none';
 }
