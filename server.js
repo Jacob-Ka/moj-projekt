@@ -329,9 +329,43 @@ const LIMITY_PLANOW = {
         tokeny: parseInt(process.env.ENTERPRISE_TOKENY_AI || '300000', 10), // 10000 produktów * 30 dni
         produkty: parseInt(process.env.ENTERPRISE_LIMIT_PRODUKTOW || '10000', 10),
         cena_mc: 9900, cena_rok: 99000
+    },
+    // Plany "kontaktowe" - NIE sprzedawane samoobsługowo przez Stripe Checkout
+    // (celowo brak wpisu w STRIPE_PRICE_ID niżej). Klient klika "Skontaktuj
+    // się" na froncie, a plan jest nadawany ręcznie przez /api/admin/nadaj-plan
+    // po indywidualnych ustaleniach (wdrożenie, SLA, dedykowany opiekun itd.).
+    //
+    // WAŻNE - limity tokenów/produktów dla obu poniższych planów trzymają
+    // DOKŁADNIE ten sam stosunek zł/token co plany Starter-Enterprise powyżej
+    // (~0,033 zł bezpiecznego przychodu na 1 token AI w najgorszym scenariuszu
+    // zużycia - patrz komentarz przy LIMITY_PLANOW wyżej). Świadomie NIE dano
+    // im literalnie "bez limitu" - klient z dużym sklepem i włączoną
+    // automatyzacją mógłby wygenerować koszt AI wyższy niż przychód z jego
+    // subskrypcji. Limity są za to na tyle wysokie, że żaden realny klient
+    // w praktyce ich nie dotknie - z perspektywy klienta to "bez limitu".
+    CORPORATE: {
+        tokeny: parseInt(process.env.CORPORATE_TOKENY_AI || '450000', 10), // 15000 produktów * 30 dni
+        produkty: parseInt(process.env.CORPORATE_LIMIT_PRODUKTOW || '15000', 10),
+        cena_mc: 14900, cena_rok: 149000
+    },
+    UNLIMITED: {
+        tokeny: parseInt(process.env.UNLIMITED_TOKENY_AI || '750000', 10), // 25000 produktów * 30 dni
+        produkty: parseInt(process.env.UNLIMITED_LIMIT_PRODUKTOW || '25000', 10),
+        cena_mc: 24900, cena_rok: 249000
     }
 };
-const PLANY_PLATNE = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE']; // plany mozliwe do "kupienia" (na razie testowo, bez realnej platnosci
+// Plany mozliwe do "kupienia" - CORPORATE/UNLIMITED są tu celowo, żeby admin
+// mógł je nadać przez /api/admin/nadaj-plan (patrz walidacja przy tym
+// endpoincie), ale bez odpowiadającego wpisu w STRIPE_PRICE_ID nigdy nie
+// przejdą przez samoobsługowy /api/stripe/checkout (ten endpoint odpowie 503
+// "nie są jeszcze skonfigurowane" - patrz niżej) - a front-end i tak nigdy
+// nie wywoła checkoutu dla tych planów, tylko pokaże link kontaktowy.
+const PLANY_PLATNE = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE', 'CORPORATE', 'UNLIMITED'];
+// Plany, które faktycznie przechodzą przez samoobsługowy Stripe Checkout -
+// używane do ukrywania/blokowania checkoutu dla planów kontaktowych typu
+// CORPORATE/UNLIMITED, niezależnie od tego, czy ktoś kiedyś doda dla nich
+// ceny Stripe.
+const PLANY_SAMOOBSLUGOWE = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
 
 // ============== INTEGRACJA STRIPE (prawdziwe płatności) ==============
 // Świadomie BEZ pakietu npm "stripe" - to zwykłe wywołania REST przez
@@ -1336,8 +1370,8 @@ app.post('/api/stripe/checkout', wymagajSesji, async (req, res) => {
         return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto, aby wykupić płatny plan.' });
     }
     const { plan, okres } = req.body;
-    if (!PLANY_PLATNE.includes(plan)) {
-        return res.status(400).json({ success: false, error: 'Nieznany plan.' });
+    if (!PLANY_SAMOOBSLUGOWE.includes(plan)) {
+        return res.status(400).json({ success: false, error: 'Ten plan jest dostępny tylko po kontakcie z nami - napisz na kontakt.priceaicloud@gmail.com.' });
     }
     // Domyślnie miesięcznie, jeśli front-end z jakiegoś powodu nie przesłał
     // okresu - bezpieczny wybór, bo cena miesięczna zawsze powinna istnieć.

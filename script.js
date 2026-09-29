@@ -318,19 +318,37 @@ function renderujPlany(cennik) {
     const kontener = document.getElementById('planyLista');
     if (!kontener || !cennik) return;
 
+    // STARTER i PRO są celowo schowane z listy wyboru (nowi klienci ich nie
+    // widzą i nie mogą już ich kupić) - ale zostają w planyPlatne niżej, bo
+    // klienci, którzy JUŻ na nich są (kupili wcześniej), muszą nadal widzieć
+    // przycisk "Zarządzaj subskrypcją" do swojego istniejącego Stripe. Gdyby
+    // ich stąd usunąć, taki klient straciłby dostęp do zarządzania własną
+    // płatną subskrypcją.
     const planyPlatne = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
     const wrapperSubskrypcji = document.getElementById('zarzadzajSubskrypcjaWrapper');
     if (wrapperSubskrypcji) {
         wrapperSubskrypcji.style.display = planyPlatne.includes(window.planUzytkownika) ? 'block' : 'none';
     }
 
-    const kolejnosc = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
+    // CORPORATE i UNLIMITED to plany "kontaktowe" - nie mają samoobsługowego
+    // zakupu przez Stripe, tylko przycisk kierujący do kontaktu mailowego
+    // (ustalenia indywidualne, nadanie planu ręcznie przez admina).
+    const planyKontaktowe = ['CORPORATE', 'UNLIMITED'];
+    const kolejnosc = ['BUSINESS', 'SCALE', 'ENTERPRISE', 'CORPORATE', 'UNLIMITED'];
     kontener.innerHTML = kolejnosc.map(nazwa => {
         const p = cennik[nazwa];
         if (!p) return '';
+        const kontaktowy = planyKontaktowe.includes(nazwa);
         const cena = okresPlanu === 'rok' ? p.cena_rok : p.cena_mc;
         const jednostka = okresPlanu === 'rok' ? t('period_year_short') : t('period_month_short');
         const aktywny = window.planUzytkownika === nazwa;
+        const przyciskHtml = kontaktowy
+            ? `<a href="mailto:kontakt.priceaicloud@gmail.com?subject=${encodeURIComponent('Plan ' + nazwa + ' - zapytanie')}" class="btn-success" style="width:100%; display:inline-block; box-sizing:border-box; text-decoration:none;">
+                    ${t('contact_us_btn')}
+                </a>`
+            : `<button class="${aktywny ? 'btn-cancel' : 'btn-success'}" style="width:100%;" ${aktywny ? 'disabled' : ''} onclick="aktywujPlan('${nazwa}')">
+                    ${aktywny ? t('current_plan') : t('choose_plan')}
+                </button>`;
         return `
             <div style="background:#0f172a; border:1px solid ${aktywny ? '#4f46e5' : '#334155'}; border-radius:10px; padding:22px; text-align:center;">
                 <h4 style="color:#818cf8; margin:0 0 10px 0;">${nazwa}</h4>
@@ -338,10 +356,8 @@ function renderujPlany(cennik) {
                 <div style="font-size:12px; color:#94a3b8; margin-bottom:18px;">/ ${jednostka}</div>
                 <div style="font-size:13px; color:#cbd5e1; margin-bottom:6px;">🎟️ ${p.tokeny} ${t('ai_tokens_label').toLowerCase()}/${t('period_month_short')}</div>
                 <div style="font-size:13px; color:#cbd5e1; margin-bottom:18px;">📦 ${p.produkty} ${t('products_label')}</div>
-                ${!aktywny ? `<div style="font-size:12px; color:#4ade80; font-weight:600; margin-bottom:14px;">✨ ${t('trial_badge')}</div>` : ''}
-                <button class="${aktywny ? 'btn-cancel' : 'btn-success'}" style="width:100%;" ${aktywny ? 'disabled' : ''} onclick="aktywujPlan('${nazwa}')">
-                    ${aktywny ? t('current_plan') : t('choose_plan')}
-                </button>
+                ${(!aktywny && !kontaktowy) ? `<div style="font-size:12px; color:#4ade80; font-weight:600; margin-bottom:14px;">✨ ${t('trial_badge')}</div>` : ''}
+                ${przyciskHtml}
             </div>
         `;
     }).join('');
