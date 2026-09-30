@@ -1235,6 +1235,34 @@ app.post('/api/usun-konto', wymagajSesji, async (req, res) => {
     }
 });
 
+// Zmiana hasła przez ZALOGOWANEGO użytkownika (ikona ⚙️ Ustawienia) - inaczej
+// niż /api/resetuj-haslo (dla kogoś, kto się wylogował i zapomniał hasła),
+// tutaj wymagamy podania OBECNEGO hasła zamiast kodu z maila, bo sesja już
+// potwierdza tożsamość, a stare hasło dodatkowo chroni przed kimś, kto
+// przejął na chwilę odblokowany komputer użytkownika.
+app.post('/api/ustawienia/zmien-haslo', wymagajSesji, async (req, res) => {
+    if (req.session.isGuest) {
+        return res.status(403).json({ success: false, error: 'Konto DEMO nie ma hasła do zmiany.' });
+    }
+    const { obecneHaslo, noweHaslo } = req.body;
+    if (!obecneHaslo || !noweHaslo || noweHaslo.length < 6) {
+        return res.status(400).json({ success: false, error: 'Podaj obecne hasło i nowe hasło (min. 6 znaków).' });
+    }
+    try {
+        const user = await dbGetAsync(`SELECT haslo_hash FROM users WHERE id = ?`, [req.session.userId]);
+        if (!user) return res.status(404).json({ success: false, error: 'Nie znaleziono konta.' });
+        const pasuje = await bcrypt.compare(obecneHaslo, user.haslo_hash);
+        if (!pasuje) return res.status(401).json({ success: false, error: 'Nieprawidłowe obecne hasło.' });
+
+        const nowyHash = await bcrypt.hash(noweHaslo, 10);
+        await dbRunAsync(`UPDATE users SET haslo_hash = ? WHERE id = ?`, [nowyHash, req.session.userId]);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Błąd zmiany hasła:', e.message);
+        res.status(500).json({ success: false, error: 'Błąd zmiany hasła.' });
+    }
+});
+
 app.post('/api/login', (req, res) => {
     const { email, haslo } = req.body;
     if (!email || !haslo) return res.status(400).json({ success: false, error: 'Podaj email i hasło.' });
@@ -2699,6 +2727,26 @@ app.delete('/api/produkty/:id', wymagajSesji, (req, res) => {
         if (err) return res.status(500).json({ success: false, error: 'Błąd usuwania produktu.' });
         res.json({ success: true });
     });
+});
+
+// Zbiorcze usuwanie produktów (pasek akcji masowych) - jedno zapytanie
+// zamiast N osobnych DELETE-ów z front-endu. WHERE user_id = ? jest tu
+// krytyczne - bez tego użytkownik mógłby (podając odpowiednie ID w ciele
+// zapytania) skasować produkty należące do kogoś innego.
+app.post('/api/produkty/usun-wsadowo', wymagajSesji, (req, res) => {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.map(id => parseInt(id, 10)).filter(Number.isInteger) : [];
+    if (ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'Nie podano żadnych produktów do usunięcia.' });
+    }
+    const znakiZapytania = ids.map(() => '?').join(',');
+    db.run(
+        `DELETE FROM globalne_produkty WHERE id IN (${znakiZapytania}) AND user_id = ?`,
+        [...ids, req.session.userId],
+        function (err) {
+            if (err) return res.status(500).json({ success: false, error: 'Błąd usuwania produktów.' });
+            res.json({ success: true, usunieto: this.changes });
+        }
+    );
 });
 
 // Przełącznik Auto-pricing PRZY POJEDYNCZYM produkcie (wiersz tabeli).

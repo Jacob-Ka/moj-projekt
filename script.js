@@ -421,6 +421,51 @@ async function usunKonto() {
     }
 }
 
+// ============== USTAWIENIA KONTA (ikona zębatki) ==============
+function otworzUstawienia() {
+    document.getElementById('zmienHasloError').innerText = '';
+    document.getElementById('ustawieniaObecneHaslo').value = '';
+    document.getElementById('ustawieniaNoweHaslo').value = '';
+    document.getElementById('ustawieniaPotwierdzHaslo').value = '';
+    document.getElementById('ustawieniaModal').style.display = 'flex';
+}
+
+async function zmienHasloZalogowany() {
+    const obecneHaslo = document.getElementById('ustawieniaObecneHaslo').value;
+    const noweHaslo = document.getElementById('ustawieniaNoweHaslo').value;
+    const potwierdzenie = document.getElementById('ustawieniaPotwierdzHaslo').value;
+    const errEl = document.getElementById('zmienHasloError');
+    errEl.innerText = '';
+
+    if (!obecneHaslo) { errEl.innerText = t('settings_current_password_required'); return; }
+    if (!noweHaslo || noweHaslo.length < 6) { errEl.innerText = t('reset_password_too_short'); return; }
+    if (noweHaslo !== potwierdzenie) { errEl.innerText = t('settings_password_mismatch'); return; }
+
+    const data = await apiFetch('/ustawienia/zmien-haslo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ obecneHaslo, noweHaslo })
+    });
+    if (data?.success) {
+        pokazToast(t('settings_password_changed_success'), 'success');
+        document.getElementById('ustawieniaModal').style.display = 'none';
+    } else {
+        errEl.innerText = data?.error || t('ai_error');
+    }
+}
+
+// Ręczne odświeżenie tabeli produktów (przycisk 🔄 obok "Dodaj produkt") -
+// wcześniej jedyny sposób na zobaczenie świeżych danych z serwera (np. po
+// zmianie ceny konkurencji przez kogoś innego, albo przebiegu harmonogramu
+// w tle) było ręczne przeładowanie całej strony przeglądarki.
+async function odswiezDaneRecznie() {
+    const btn = document.getElementById('btnOdswiez');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+    await pobierzDane();
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    pokazToast(t('data_refreshed_success'), 'success');
+}
+
 // Po powrocie ze Stripe (udana płatność albo rezygnacja) - pokazujemy
 // odpowiedni komunikat i czyścimy adres URL, żeby odświeżenie strony nie
 // pokazywało tego samego toasta w kółko.
@@ -1106,6 +1151,7 @@ function renderujTabele(produkty) {
                     <strong>${p.nazwa}</strong>
                     <button class="chart-badge-btn" onclick="pokazWykresHistorii(${p.id}, '${p.nazwa}', ${p.twoja_cena}, ${p.cena_konkurencji || 0}, '${symbol}', ${floorPrice})">${t('btn_compare')}</button>
                     <button class="chart-badge-btn" onclick="pokazLogZmian(${p.id}, '${p.nazwa}')">${t('btn_log')}</button>
+                    <button class="chart-badge-btn" style="color:#f87171;" onclick="usunProdukt(${p.id}, '${p.nazwa.replace(/'/g, "\\'")}')">🗑️ ${t('btn_delete_product')}</button>
                 </td>
                 <td>
                     <code>${p.ean || '-'}</code>
@@ -1365,6 +1411,42 @@ async function masowoWlaczAuto() {
     } else {
         pokazToast(data?.error || 'Błąd włączania Auto-pricing.', 'error');
     }
+}
+
+// Usunięcie POJEDYNCZEGO produktu z katalogu (przycisk 🗑️ w wierszu) - z
+// potwierdzeniem, bo to nieodwracalne (kasuje też historię cen tego produktu).
+function usunProdukt(id, nazwa) {
+    potwierdz(t('confirm_delete_product').replace('{nazwa}', nazwa), async () => {
+        const data = await apiFetch(`/produkty/${id}`, { method: 'DELETE' });
+        if (data?.success) {
+            pokazToast(t('product_deleted_success'), 'success');
+            pobierzDane();
+        } else {
+            pokazToast(data?.error || t('ai_error'), 'error');
+        }
+    });
+}
+
+// Zbiorcze usunięcie zaznaczonych produktów (pasek akcji masowych) - jedno
+// zapytanie do serwera zamiast N osobnych DELETE-ów, żeby nie zalewać API
+// dziesiątkami równoległych requestów przy zaznaczeniu np. całej strony.
+function masowoUsunProdukty() {
+    const zaznaczoneId = [...document.querySelectorAll('.prod-checkbox:checked')].map(cb => parseInt(cb.value, 10));
+    if (zaznaczoneId.length === 0) { pokazToast(t('select_products_first'), 'error'); return; }
+
+    potwierdz(t('confirm_delete_products_batch').replace('{n}', zaznaczoneId.length), async () => {
+        const data = await apiFetch('/produkty/usun-wsadowo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: zaznaczoneId })
+        });
+        if (data?.success) {
+            pokazToast(t('products_deleted_batch_success').replace('{n}', data.usunieto), 'success');
+            pobierzDane();
+        } else {
+            pokazToast(data?.error || t('ai_error'), 'error');
+        }
+    });
 }
 
 // Zbiorcze zatwierdzenie sugerowanych cen AI dla zaznaczonych produktów -

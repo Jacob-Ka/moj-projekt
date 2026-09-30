@@ -96,6 +96,8 @@
 
         .btn-success { background: #059669; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
         .btn-success:hover { background: #047857; }
+        .btn-danger { background: #dc2626; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        .btn-danger:hover { background: #b91c1c; }
         .action-container { display: flex; align-items: center; gap: 10px; }
         code { background: #334155; padding: 2px 4px; border-radius: 3px; font-size: 12px; color: #e2e8f0; }
 
@@ -169,6 +171,7 @@
                 🔔
                 <span id="licznikPowiadomien" style="display:none; position:absolute; top:-6px; right:-6px; background:#dc2626; color:#fff; font-size:10px; font-weight:700; border-radius:10px; padding:1px 5px; min-width:16px; text-align:center;"></span>
             </button>
+            <button onclick="otworzUstawienia()" title="Ustawienia" style="background:#0f172a; border:1px solid #334155; padding:6px 12px; font-size:14px;">⚙️</button>
             <select id="langSelect" onchange="ustawJezyk(this.value)" style="background:#0f172a; color:#fff; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:12px; font-weight:600; cursor:pointer;">
                 <option value="pl">🇵🇱 Polski</option>
                 <option value="en">🇬🇧 English</option>
@@ -416,6 +419,7 @@
                     </div>
                     <div class="toolbar-right">
                         <input type="text" id="searchInput" class="search-box" data-i18n-ph="search_ph" placeholder="Szukaj produktu lub EAN..." onkeyup="filtrujProdukty()">
+                        <button class="btn-export" id="btnOdswiez" data-i18n="btn_refresh" onclick="odswiezDaneRecznie()"></button>
                         <button class="btn-export" data-i18n="btn_add_product" onclick="otworzModalDodawania()"></button>
                         <button class="btn-export" data-i18n="btn_export_csv" onclick="eksportujCSV()"></button>
                     </div>
@@ -426,6 +430,7 @@
                     <button class="btn-secondary" data-i18n="btn_batch_ai" onclick="generujSugestieAIWsadowo()"></button>
                     <button class="btn-secondary" data-i18n="btn_batch_auto" onclick="masowoWlaczAuto()"></button>
                     <button class="btn-success" data-i18n="btn_batch_approve" onclick="masowoZatwierdzCeny()"></button>
+                    <button class="btn-danger" data-i18n="btn_batch_delete" onclick="masowoUsunProdukty()"></button>
                 </div>
 
                 <div class="table-container">
@@ -871,6 +876,30 @@
             <div class="modal-error" id="usunKontoError"></div>
             <input type="password" id="usunKontoHaslo" data-i18n-ph="login_pass_ph" placeholder="Hasło">
             <button class="btn-cancel" style="width:100%; background:#dc2626;" data-i18n="delete_account_confirm_btn" onclick="usunKonto()"></button>
+        </div>
+    </div>
+
+    <!-- Ustawienia konta -->
+    <div class="modal-overlay" id="ustawieniaModal">
+        <div class="modal-card small">
+            <div class="modal-header">
+                <h3 data-i18n="settings_modal_title"></h3>
+                <button class="close-modal" onclick="document.getElementById('ustawieniaModal').style.display='none'">&times;</button>
+            </div>
+
+            <h4 style="color:#f8fafc; font-size:14px; margin:0 0 10px 0;" data-i18n="settings_password_section_title"></h4>
+            <div class="modal-error" id="zmienHasloError"></div>
+            <input type="password" id="ustawieniaObecneHaslo" data-i18n-ph="settings_current_password_ph" placeholder="Obecne hasło" autocomplete="current-password">
+            <input type="password" id="ustawieniaNoweHaslo" data-i18n-ph="settings_new_password_ph" placeholder="Nowe hasło" autocomplete="new-password" style="margin-top:8px;">
+            <input type="password" id="ustawieniaPotwierdzHaslo" data-i18n-ph="settings_confirm_password_ph" placeholder="Potwierdź nowe hasło" autocomplete="new-password" style="margin-top:8px;">
+            <button class="btn-success" style="width:100%; margin-top:12px;" data-i18n="settings_save_password_btn" onclick="zmienHasloZalogowany()"></button>
+
+            <hr style="border-color:#334155; margin:20px 0;">
+
+            <h4 style="color:#f8fafc; font-size:14px; margin:0 0 10px 0;" data-i18n="settings_account_section_title"></h4>
+            <p style="color:#94a3b8; font-size:12px; margin:0 0 10px 0;" data-i18n="support_contact_label"></p>
+            <p style="color:#a5b4fc; font-size:13px; margin:0 0 14px 0;">kontakt.priceaicloud@gmail.com</p>
+            <button class="btn-cancel" style="width:100%; background:#dc2626;" data-i18n="delete_account_link" onclick="document.getElementById('ustawieniaModal').style.display='none'; otworzUsuniecieKonta()"></button>
         </div>
     </div>
 
