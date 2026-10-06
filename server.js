@@ -3766,10 +3766,49 @@ Wybierz JEDNĄ ofertę, która NAJLEPIEJ odpowiada dokładnie temu samemu produk
 
 Jeśli żadna oferta nie spełnia WSZYSTKICH czterech warunków, zwróć numer -1 - lepiej nie wybrać niczego niż wybrać błędnie.
 
+Dodatkowo wypisz w polu "wszystkie" numery WSZYSTKICH ofert (razem z wybraną), które spełniają te same cztery warunki, czyli dotyczą tego samego, nowego produktu. Każdy sklep wymieniaj co najwyżej raz. Ta lista posłuży do obliczenia mediany cen rynkowych, więc bądź rygorystyczny - lepiej pominąć wątpliwą ofertę niż ją dodać.
+
 Przeanalizuj to W MYŚLACH, ale w odpowiedzi NIE PISZ żadnego rozumowania ani wyjaśnień poza samym wynikiem. Twoja odpowiedź musi składać się WYŁĄCZNIE z jednego obiektu JSON, bez żadnego tekstu przed ani po nim:
-{"numer": liczba, "uzasadnienie": "BARDZO KRÓTKIE uzasadnienie (maks. 15 słów) w języku ${jezykOpis}"}`;
+{"numer": liczba, "wszystkie": [liczby], "uzasadnienie": "BARDZO KRÓTKIE uzasadnienie (maks. 15 słów) w języku ${jezykOpis}"}`;
 
     return await wywolajAnthropic(prompt, 1000);
+}
+
+// ============== STATYSTYKI RYNKU ==============
+// Z listy cen pasujących ofert liczy min / medianę / średnią / max, pozycję
+// klienta i proponowaną cenę. Mediana jest odporna na pojedyncze skrajne
+// oferty, dlatego jest domyślnym punktem odniesienia zamiast "najtańszego".
+const PROCENT_PONIZEJ_MEDIANY = 1; // propozycja = mediana minus 1%
+
+function obliczStatystykiRynku(ceny, twojaCena, procentFloor) {
+    const lista = (ceny || []).filter(c => typeof c === 'number' && isFinite(c) && c > 0).sort((a, b) => a - b);
+    if (lista.length === 0) return null;
+    const n = lista.length;
+    const mediana = n % 2 ? lista[(n - 1) / 2] : (lista[n / 2 - 1] + lista[n / 2]) / 2;
+    const srednia = lista.reduce((a, b) => a + b, 0) / n;
+    const min = lista[0];
+    const max = lista[n - 1];
+    const moja = parseFloat(twojaCena);
+    const floor = (!isNaN(moja) && procentFloor) ? moja * (procentFloor / 100) : null;
+    const zabezpiecz = (c) => (floor !== null && c < floor) ? floor : c;
+    const ponizej = (c) => zabezpiecz(Math.round(c * (1 - PROCENT_PONIZEJ_MEDIANY / 100) * 100) / 100);
+    let pozycja = null; // ile ofert jest tańszych od ceny klienta
+    if (!isNaN(moja)) pozycja = lista.filter(c => c < moja).length;
+    return {
+        liczbaOfert: n,
+        min: +min.toFixed(2),
+        mediana: +mediana.toFixed(2),
+        srednia: +srednia.toFixed(2),
+        max: +max.toFixed(2),
+        twojaCena: isNaN(moja) ? null : moja,
+        tanszychOdCiebie: pozycja,
+        floorCena: floor !== null ? +floor.toFixed(2) : null,
+        strategie: {
+            mediana: { odniesienie: +mediana.toFixed(2), propozycja: ponizej(mediana) },
+            srednia: { odniesienie: +srednia.toFixed(2), propozycja: ponizej(srednia) },
+            najtansza: { odniesienie: +min.toFixed(2), propozycja: ponizej(min) }
+        }
+    };
 }
 
 // ============== JEDEN, SCALONY WSKAŹNIK PEWNOŚCI ==============
@@ -3889,6 +3928,37 @@ async function wyszukajIZweryfikujOferteKonkurencji(produkt, jezyk, userId, req)
         } catch (e) { /* diagnostyka jest opcjonalna - błąd ignorujemy */ }
     }
 
+    // RYNEK: wszystkie oferty uznane przez AI za ten sam produkt (jeden sklep =
+    // jedna oferta). Cena wybranej oferty jest tą zweryfikowaną na stronie;
+    // pozostałe pochodzą z wyników wyszukiwania. Gdy AI nie zwróci listy,
+    // rynek składa się z samej wybranej oferty (stare zachowanie).
+    const numeryRynku = new Set([wybor.numer]);
+    if (Array.isArray(wybor.wszystkie)) {
+        wybor.wszystkie.forEach(n => { if (Number.isInteger(n) && n >= 1 && n <= oferty.length) numeryRynku.add(n); });
+    }
+    const cenyRynku = [];
+    const sklepyRynku = new Set();
+    for (const n of numeryRynku) {
+        const o = oferty[n - 1];
+        const klucz = String(o.sklep || '').trim().toLowerCase();
+        if (n !== wybor.numer && klucz && sklepyRynku.has(klucz)) continue;
+        let c = (n === wybor.numer) ? cenaLiczba : parseFloat(String(o.cena).replace(/[^\d.,]/g, '').replace(',', '.'));
+        if (isNaN(c) || c <= 0) continue;
+        const cenaWlasna = parseFloat(produkt.twoja_cena);
+        if (n !== wybor.numer && !isNaN(cenaWlasna) && (c < cenaWlasna * 0.25 || c > cenaWlasna * 4)) continue;
+        if (klucz) sklepyRynku.add(klucz);
+        cenyRynku.push(c);
+    }
+    let konfRynek = null;
+    try { konfRynek = await dbGetAsync(`SELECT * FROM konfiguracja WHERE user_id = ?`, [userId]); } catch (e) { /* domyślne 75% */ }
+    const rynek = obliczStatystykiRynku(cenyRynku, produkt.twoja_cena, obliczProcentFloorPrice(produkt, konfRynek));
+    wszyscyKandydaci.forEach((k, i) => { k.wRynku = numeryRynku.has(i + 1); });
+    // Punkt odniesienia: mediana, gdy mamy co najmniej 3 oferty; przy 1-2
+    // ofertach statystyka byłaby fałszywą precyzją, więc zostaje cena wybranej.
+    const cenaWybranejZweryfikowana = cenaLiczba;
+    const uzyjMediany = rynek && rynek.liczbaOfert >= 3;
+    const cenaOdniesienia = uzyjMediany ? rynek.mediana : cenaWybranejZweryfikowana;
+
     await dbRunAsync(`UPDATE limity_uzytkownika SET tokeny_ai = tokeny_ai - 1 WHERE user_id = ?`, [userId]);
     await dbRunAsync(
         `INSERT INTO historia_cen_konkurencji (user_id, produkt_id, cena, sklep, link, zrodlo, zweryfikowano, data, wszystkie_kandydaci_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -3900,7 +3970,10 @@ async function wyszukajIZweryfikujOferteKonkurencji(produkt, jezyk, userId, req)
         success: true,
         propozycja: {
             tytul: wybrana.tytul,
-            cena: cenaLiczba.toFixed(2),
+            cena: cenaOdniesienia.toFixed(2),
+            cenaWybranejOferty: cenaWybranejZweryfikowana.toFixed(2),
+            punktOdniesienia: uzyjMediany ? 'mediana' : 'wybrana_oferta',
+            rynek,
             waluta: targetCurrency,
             sklep: wybrana.sklep,
             link: wybrana.link || '',

@@ -764,7 +764,7 @@ function zbudujListeKandydatow(propozycja) {
 
     const wiersze = kandydaci.map(k => `
         <div style="display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #1e293b; ${k.wybrana ? 'background:#1e1b4b;' : ''}">
-            <span style="flex:1; ${k.wybrana ? 'color:#a5b4fc; font-weight:600;' : 'color:#94a3b8;'}">${k.wybrana ? '✓ ' : ''}${k.tytul} <span style="color:#64748b;">— ${k.sklep}</span></span>
+            <span style="flex:1; ${k.wybrana ? 'color:#a5b4fc; font-weight:600;' : 'color:#94a3b8;'}">${k.wybrana ? '✓ ' : (k.wRynku ? '• ' : '')}${k.tytul} <span style="color:#64748b;">— ${k.sklep}</span></span>
             <span style="white-space:nowrap; ${k.wybrana ? 'color:#a5b4fc; font-weight:600;' : 'color:#94a3b8;'}">${k.cena}</span>
         </div>
     `).join('');
@@ -775,6 +775,49 @@ function zbudujListeKandydatow(propozycja) {
             <div style="margin-top:8px; max-height:180px; overflow-y:auto;">${wiersze}</div>
         </details>
     `;
+}
+
+// Panel "Rynek": min / mediana / średnia / max z wielu ofert + pozycja klienta
+// + wybór punktu odniesienia. Zwraca HTML; wybór strategii obsługuje
+// pokazModalPotwierdzeniaKonkurencji przez przyciski radio [name=mktStrategia].
+function zbudujPanelRynku(propozycja) {
+    const r = propozycja.rynek;
+    if (!r) return '';
+    const sym = getSymbol(propozycja.waluta);
+    const sklepow = (propozycja.wszyscyKandydaci || []).filter(k => k.wRynku || k.wybrana);
+    const nSklepow = new Set(sklepow.map(k => String(k.sklep).toLowerCase())).size || r.liczbaOfert;
+    const komorka = (etykieta, wartosc, kolor) => `
+        <div style="flex:1; min-width:70px; text-align:center;">
+            <div style="font-size:10px; color:#64748b; text-transform:uppercase;">${etykieta}</div>
+            <div style="font-weight:700; color:${kolor || '#e2e8f0'};">${wartosc.toFixed(2)}</div>
+        </div>`;
+    const wybieralne = r.liczbaOfert >= 3;
+    const opcja = (klucz, etykieta, zaznaczona) => {
+        const st = r.strategie[klucz];
+        return `<label style="display:flex; justify-content:space-between; gap:8px; padding:5px 0; font-size:12px; cursor:pointer; color:#cbd5e1;">
+            <span><input type="radio" name="mktStrategia" value="${klucz}" ${zaznaczona ? 'checked' : ''}> ${etykieta}</span>
+            <span style="color:#94a3b8; white-space:nowrap;">${st.odniesienie.toFixed(2)} → <strong style="color:#818cf8;">${st.propozycja.toFixed(2)} ${sym}</strong></span>
+        </label>`;
+    };
+    return `
+        <div style="background:#0f172a; border:1px solid #334155; border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+            <div style="font-weight:700; font-size:13px; margin-bottom:8px;">📊 ${t('mkt_title')}: ${t('mkt_offers').replace('{n}', nSklepow).replace(/^/, r.liczbaOfert + ' ')}</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px;">
+                ${komorka(t('mkt_min'), r.min, '#34d399')}
+                ${komorka(t('mkt_median'), r.mediana, '#818cf8')}
+                ${komorka(t('mkt_avg'), r.srednia)}
+                ${komorka(t('mkt_max'), r.max, '#f87171')}
+                ${r.twojaCena !== null ? komorka(t('mkt_yours'), r.twojaCena, '#fbbf24') : ''}
+            </div>
+            ${r.tanszychOdCiebie !== null ? `<div style="font-size:12px; color:#94a3b8; margin-bottom:8px;">${t('mkt_cheaper').replace('{n}', r.tanszychOdCiebie).replace('{m}', r.liczbaOfert)}</div>` : ''}
+            ${wybieralne ? `
+                <div style="font-size:11px; color:#64748b; text-transform:uppercase; margin-bottom:2px;">${t('mkt_strategy')}</div>
+                ${opcja('mediana', t('mkt_s_median'), true)}
+                ${opcja('srednia', t('mkt_s_avg'), false)}
+                ${opcja('najtansza', t('mkt_s_min'), false)}
+                ${r.floorCena !== null ? `<div style="font-size:11px; color:#64748b; margin-top:4px;">🛡️ ${t('mkt_floor_note')} (${r.floorCena.toFixed(2)} ${sym})</div>` : ''}
+            ` : `<div style="font-size:11px; color:#fbbf24;">${t('mkt_few')}</div>`}
+        </div>`;
 }
 
 function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
@@ -816,7 +859,8 @@ function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
                 </div>
             </div>
             <div style="margin-bottom:10px;"><strong>${propozycja.tytul}</strong></div>
-            <div style="margin-bottom:6px;">💰 <strong style="color:#818cf8;">${propozycja.cena} ${getSymbol(propozycja.waluta)}</strong> — ${propozycja.sklep}</div>
+            <div style="margin-bottom:6px;">💰 <strong id="mktCenaZapisu" style="color:#818cf8;">${propozycja.cena} ${getSymbol(propozycja.waluta)}</strong> — ${propozycja.sklep}${propozycja.punktOdniesienia === 'mediana' ? ' <span style="font-size:11px; color:#64748b;">(' + t('mkt_ref') + ': ' + t('mkt_median').toLowerCase() + ')</span>' : ''}</div>
+            ${zbudujPanelRynku(propozycja)}
             <div style="margin-bottom:8px; font-size:11px; display:flex; flex-direction:column; gap:3px; color:#cbd5e1;">${szczegoly.join('')}</div>
             <div style="margin-bottom:12px; font-size:13px; color:#94a3b8;">🤖 ${propozycja.uzasadnienie}</div>
             ${zbudujListeKandydatow(propozycja)}
@@ -826,6 +870,18 @@ function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
     const modal = document.getElementById('potwierdzKonkurencjeModal');
     if (modal) modal.style.display = 'flex';
 
+    // Cena zapisywana jako odniesienie zależy od wybranej strategii rynku.
+    let cenaDoZapisu = propozycja.cena;
+    document.querySelectorAll('input[name="mktStrategia"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const st = propozycja.rynek && propozycja.rynek.strategie[radio.value];
+            if (!st) return;
+            cenaDoZapisu = st.odniesienie.toFixed(2);
+            const el = document.getElementById('mktCenaZapisu');
+            if (el) el.textContent = `${cenaDoZapisu} ${getSymbol(propozycja.waluta)}`;
+        });
+    });
+
     const btn = document.getElementById('potwierdzKonkurencjeBtn');
     if (btn) {
         const nowyBtn = btn.cloneNode(true);
@@ -834,7 +890,7 @@ function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
             const wynik = await apiFetch(`/produkty/${id}/potwierdz-konkurencje`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cena: propozycja.cena, link: propozycja.link, sklep: propozycja.sklep })
+                body: JSON.stringify({ cena: cenaDoZapisu, link: propozycja.link, sklep: propozycja.sklep })
             });
             document.getElementById('potwierdzKonkurencjeModal').style.display = 'none';
             if (wynik?.success) {
