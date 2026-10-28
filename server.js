@@ -4321,12 +4321,12 @@ Dane produktu:
 - Cena konkurencji: ${cenaKonkurencji !== null ? cenaKonkurencji + ' ' + produkt.waluta : 'brak danych'}
 - Minimalna akceptowalna cena (floor price, nie schodzić poniżej): ${floorPrice} ${produkt.waluta}
 
-Zaproponuj sugerowaną cenę sprzedaży (liczba, w tej samej walucie, nie niższa niż floor price) i napisz krótkie (2-3 zdania) uzasadnienie biznesowe tej decyzji NAPISANE W JĘZYKU: ${jezykOpis}.
+Zaproponuj sugerowaną cenę sprzedaży (liczba, w tej samej walucie, nie niższa niż floor price) i napisz bardzo krótkie (maksymalnie 1-2 krótkie zdania, do 200 znaków) uzasadnienie biznesowe tej decyzji NAPISANE W JĘZYKU: ${jezykOpis}.
 
 Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego dodatkowego tekstu przed ani po:
 {"sugerowana_cena": liczba, "uzasadnienie": "tekst uzasadnienia w języku ${jezykOpis}"}`;
 
-    const wynik = await wywolajAnthropic(prompt, 300);
+    const wynik = await wywolajAnthropic(prompt, 800);
     if (typeof wynik.sugerowana_cena !== 'number' || !wynik.uzasadnienie) {
         throw new Error('Odpowiedź AI nie zawiera oczekiwanych pól.');
     }
@@ -4357,7 +4357,7 @@ Dla KAŻDEGO produktu zaproponuj sugerowaną cenę (liczba, nie niższa niż jeg
 Odpowiedz WYŁĄCZNIE w formacie JSON - tablicą obiektów, bez żadnego dodatkowego tekstu przed ani po:
 [{"id": liczba, "sugerowana_cena": liczba, "uzasadnienie": "tekst"}, ...]`;
 
-    const wynik = await wywolajAnthropic(prompt, 200 * produkty.length + 200);
+    const wynik = await wywolajAnthropic(prompt, 300 * produkty.length + 400);
     if (!Array.isArray(wynik)) throw new Error('Odpowiedź AI nie jest tablicą.');
     return wynik;
 }
