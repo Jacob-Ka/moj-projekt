@@ -3854,8 +3854,10 @@ function obliczPewnoscDopasowania({ zrodloWyszukiwania, zweryfikowanoNaStronie, 
 // wywołujący decyduje, co zrobić z wynikiem.
 async function wyszukajIZweryfikujOferteKonkurencji(produkt, jezyk, userId, req) {
     const kontekstRynku = await detectStoreContext(userId, req);
-    const targetCountry = (produkt.kraj && produkt.kraj.trim()) ? produkt.kraj.trim().toLowerCase() : kontekstRynku.targetCountry;
     const targetCurrency = (produkt.waluta && produkt.waluta !== 'AUTO') ? produkt.waluta.toUpperCase() : kontekstRynku.targetCurrency;
+    // Kraj: jawnie ustawiony > wynikający z waluty produktu (np. PLN -> pl) > wykryty po IP/sklepie.
+    // Wcześniej przy ustawionej walucie kraj i tak brany był z IP serwera (np. NL na Railway).
+    const targetCountry = (produkt.kraj && produkt.kraj.trim()) ? produkt.kraj.trim().toLowerCase() : ((produkt.waluta && produkt.waluta !== 'AUTO') ? krajDlaWaluty(targetCurrency) : kontekstRynku.targetCountry);
 
     const { oferty, zrodloWyszukiwania } = await pobierzOfertyZGoogleShopping(produkt.nazwa, targetCurrency, targetCountry, produkt.twoja_cena, produkt.ean);
     if (oferty.length === 0) {
@@ -4067,8 +4069,10 @@ app.post('/api/produkty/:id/pobierz-cene-konkurencji', wymagajSesji, async (req,
         // jakiej walucie ma szukać ceny, nawet gdy produkt ma "AUTO" albo
         // pustą walutę.
         const kontekstRynku = await detectStoreContext(userId, req);
-        const targetCountry = (produkt.kraj && produkt.kraj.trim()) ? produkt.kraj.trim().toLowerCase() : kontekstRynku.targetCountry;
         const targetCurrency = (produkt.waluta && produkt.waluta !== 'AUTO') ? produkt.waluta.toUpperCase() : kontekstRynku.targetCurrency;
+        // Kraj: jawnie ustawiony > wynikający z waluty produktu (np. PLN -> pl) > wykryty po IP/sklepie.
+        // Wcześniej przy ustawionej walucie kraj i tak brany był z IP serwera (np. NL na Railway).
+        const targetCountry = (produkt.kraj && produkt.kraj.trim()) ? produkt.kraj.trim().toLowerCase() : ((produkt.waluta && produkt.waluta !== 'AUTO') ? krajDlaWaluty(targetCurrency) : kontekstRynku.targetCountry);
 
         const cena = await pobierzCeneZeStrony(produkt.url_konkurencja, targetCountry, targetCurrency);
         const cenaStr = cena.toFixed(2);
@@ -4878,8 +4882,10 @@ async function obslugaAutomatycznegoUzytkownika(userId, przebiegId) {
     for (const p of produkty) {
         if (!p.url_konkurencja) continue;
         try {
-            const targetCountry = (p.kraj && p.kraj.trim()) ? p.kraj.trim().toLowerCase() : kontekstRynkuUzytkownika.targetCountry;
             const targetCurrency = (p.waluta && p.waluta !== 'AUTO') ? p.waluta.toUpperCase() : kontekstRynkuUzytkownika.targetCurrency;
+            // Kraj: jawnie ustawiony > wynikający z waluty produktu (np. PLN -> pl) > wykryty po IP/sklepie.
+            // Wcześniej przy ustawionej walucie kraj i tak brany był z IP serwera (np. NL na Railway).
+            const targetCountry = (p.kraj && p.kraj.trim()) ? p.kraj.trim().toLowerCase() : ((p.waluta && p.waluta !== 'AUTO') ? krajDlaWaluty(targetCurrency) : kontekstRynkuUzytkownika.targetCountry);
             const cena = await pobierzCeneZeStrony(p.url_konkurencja, targetCountry, targetCurrency);
             await dbRunAsync(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cena.toFixed(2), p.id]);
             odswiezonoCen++;

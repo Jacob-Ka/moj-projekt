@@ -44,6 +44,19 @@
         .market-table .ok { color: #fbbf24; font-weight: 700; }
         .market-table .good { color: #4ade80; font-weight: 700; }
         .market-note { color: #64748b; font-size: 13px; margin-top: 12px; }
+        .pricing { max-width: 1000px; margin: 0 auto 60px; padding: 0 20px; text-align: center; }
+        .pricing h2 { font-size: 26px; margin: 0 0 12px; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 24px; text-align: left; }
+        .plan { position: relative; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 26px; display: flex; flex-direction: column; }
+        .plan-featured { border-color: #4f46e5; box-shadow: 0 0 0 1px #4f46e5; }
+        .plan-tag { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #4f46e5; color: #fff; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px; white-space: nowrap; }
+        .plan h3 { margin: 0 0 8px; font-size: 18px; color: #a5b4fc; }
+        .plan-price { font-size: 32px; font-weight: 700; margin-bottom: 14px; }
+        .plan-price span { font-size: 13px; font-weight: 400; color: #94a3b8; }
+        .plan ul { list-style: none; padding: 0; margin: 0 0 20px; flex: 1; }
+        .plan li { font-size: 13px; color: #cbd5e1; padding: 6px 0 6px 22px; position: relative; }
+        .plan li::before { content: "✓"; position: absolute; left: 0; color: #4ade80; font-weight: 700; }
+        .plan button { width: 100%; }
         .steps { max-width: 1000px; margin: 0 auto 50px; padding: 0 20px; text-align: center; }
         .steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 24px; text-align: left; }
         .step { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px; }
@@ -133,6 +146,33 @@
             <div class="step"><span class="step-num">2</span><h3>Sprawdzamy rynek</h3><p>PriceAI zbiera ceny konkurencji i pokazuje, gdzie jesteś za drogo, a gdzie zostawiasz pieniądze na stole.</p></div>
             <div class="step"><span class="step-num">3</span><h3>Zatwierdzasz ceny</h3><p>Dostajesz propozycje z uzasadnieniem. Akceptujesz je albo odrzucasz, a każda zmiana trafia do historii.</p></div>
         </div>
+    </div>
+
+    <div class="pricing">
+        <h2>Cennik</h2>
+        <p class="market-sub">7 dni za darmo, karta obciążona dopiero po okresie próbnym. Plan roczny: 2 miesiące gratis.</p>
+        <div class="pricing-grid">
+            <div class="plan">
+                <h3>Starter</h3>
+                <div class="plan-price">49 zł <span>/ mies.</span></div>
+                <ul><li>do 50 produktów</li><li>codzienna automatyzacja AI</li><li>cena minimalna i historia zmian</li></ul>
+                <button class="btn-ghost" onclick="pokazModal('register')">Wypróbuj za darmo</button>
+            </div>
+            <div class="plan plan-featured">
+                <div class="plan-tag">Najczęściej wybierany</div>
+                <h3>Pro</h3>
+                <div class="plan-price">299 zł <span>/ mies.</span></div>
+                <ul><li>do 300 produktów</li><li>codzienna automatyzacja AI</li><li>cena minimalna i historia zmian</li></ul>
+                <button class="btn-primary" onclick="pokazModal('register')">Wypróbuj za darmo</button>
+            </div>
+            <div class="plan">
+                <h3>Business</h3>
+                <div class="plan-price">1 490 zł <span>/ mies.</span></div>
+                <ul><li>do 1 500 produktów</li><li>codzienna automatyzacja AI</li><li>cena minimalna i historia zmian</li></ul>
+                <button class="btn-ghost" onclick="pokazModal('register')">Wypróbuj za darmo</button>
+            </div>
+        </div>
+        <p class="market-note">Większy katalog (do 25 000 produktów)? Napisz: kontakt.priceaicloud@gmail.com</p>
     </div>
 
     <div class="features">
