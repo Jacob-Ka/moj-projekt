@@ -318,12 +318,9 @@ function renderujPlany(cennik) {
     const kontener = document.getElementById('planyLista');
     if (!kontener || !cennik) return;
 
-    // STARTER i PRO są celowo schowane z listy wyboru (nowi klienci ich nie
-    // widzą i nie mogą już ich kupić) - ale zostają w planyPlatne niżej, bo
-    // klienci, którzy JUŻ na nich są (kupili wcześniej), muszą nadal widzieć
-    // przycisk "Zarządzaj subskrypcją" do swojego istniejącego Stripe. Gdyby
-    // ich stąd usunąć, taki klient straciłby dostęp do zarządzania własną
-    // płatną subskrypcją.
+    // STARTER i PRO są znowu widoczne na liście wyboru (wcześniej były celowo
+    // schowane). Zostają też w planyPlatne niżej, bo klienci na tych planach
+    // muszą widzieć przycisk "Zarządzaj subskrypcją" do swojego Stripe.
     const planyPlatne = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
     const wrapperSubskrypcji = document.getElementById('zarzadzajSubskrypcjaWrapper');
     if (wrapperSubskrypcji) {
@@ -334,7 +331,7 @@ function renderujPlany(cennik) {
     // zakupu przez Stripe, tylko przycisk kierujący do kontaktu mailowego
     // (ustalenia indywidualne, nadanie planu ręcznie przez admina).
     const planyKontaktowe = ['CORPORATE', 'UNLIMITED'];
-    const kolejnosc = ['BUSINESS', 'SCALE', 'ENTERPRISE', 'CORPORATE', 'UNLIMITED'];
+    const kolejnosc = ['STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE', 'CORPORATE', 'UNLIMITED'];
     kontener.innerHTML = kolejnosc.map(nazwa => {
         const p = cennik[nazwa];
         if (!p) return '';

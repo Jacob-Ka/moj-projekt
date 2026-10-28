@@ -31,6 +31,26 @@
         .platform-badge .icon { font-size: 20px; }
         .platform-badge.universal { border-color: #4338ca; background: #1e1b4b; color: #a5b4fc; }
 
+        .market { max-width: 960px; margin: 0 auto 60px; padding: 0 20px; text-align: center; }
+        .market h2, .steps h2 { font-size: 26px; margin: 0 0 12px; }
+        .market-sub { color: #94a3b8; font-size: 15px; line-height: 1.6; max-width: 720px; margin: 0 auto 24px; }
+        .market-table-wrap { overflow-x: auto; border: 1px solid #334155; border-radius: 12px; background: #1e293b; }
+        .market-table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+        .market-table th, .market-table td { padding: 12px 14px; border-bottom: 1px solid #334155; white-space: nowrap; }
+        .market-table th { color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .market-table th:first-child, .market-table td:first-child { text-align: left; }
+        .market-table tr:last-child td { border-bottom: none; }
+        .market-table .bad { color: #f87171; font-weight: 700; }
+        .market-table .ok { color: #fbbf24; font-weight: 700; }
+        .market-table .good { color: #4ade80; font-weight: 700; }
+        .market-note { color: #64748b; font-size: 13px; margin-top: 12px; }
+        .steps { max-width: 1000px; margin: 0 auto 50px; padding: 0 20px; text-align: center; }
+        .steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 24px; text-align: left; }
+        .step { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px; }
+        .step-num { display: inline-flex; width: 28px; height: 28px; border-radius: 50%; background: #4f46e5; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+        .step h3 { margin: 0 0 6px; font-size: 16px; }
+        .step p { margin: 0; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+
         .features { max-width: 1100px; margin: 0 auto; padding: 40px 20px 100px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
         .feature-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 26px; }
         .feature-card .icon { font-size: 28px; margin-bottom: 14px; }
@@ -86,6 +106,35 @@
         </div>
     </div>
 
+    <!-- Pokazuje DOKŁADNIE to, o czym piszemy w mailach: gdzie produkt stoi
+         względem rynku. Dane w tabeli są przykładowe (demo). -->
+    <div class="market">
+        <h2>Zobacz, gdzie Twoja cena stoi na tle rynku</h2>
+        <p class="market-sub">Dla każdego produktu sprawdzamy ceny w innych sklepach i pokazujemy najniższą, medianę i najwyższą. Na tej podstawie proponujemy cenę, a Ty zatwierdzasz zmianę jednym kliknięciem.</p>
+        <div class="market-table-wrap">
+            <table class="market-table">
+                <thead>
+                    <tr><th>Produkt (przykład)</th><th>Twoja cena</th><th>Najniższa</th><th>Mediana</th><th>Najwyższa</th><th>Propozycja</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Siekiera rozłupująca 1,7 kg</td><td class="bad">341,99 zł</td><td>258,46 zł</td><td>279,00 zł</td><td>343,00 zł</td><td class="good">274,99 zł</td></tr>
+                    <tr><td>Wiertarko-wkrętarka 18 V (body)</td><td class="bad">497,00 zł</td><td>349,98 zł</td><td>412,30 zł</td><td>737,95 zł</td><td class="good">409,00 zł</td></tr>
+                    <tr><td>Karma dla psa 12,5 kg</td><td class="ok">149,26 zł</td><td>128,90 zł</td><td>140,69 zł</td><td>193,00 zł</td><td class="good">139,90 zł</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="market-note">Propozycja nigdy nie zejdzie poniżej ustawionej przez Ciebie ceny minimalnej.</p>
+    </div>
+
+    <div class="steps">
+        <h2>Jak to działa</h2>
+        <div class="steps-grid">
+            <div class="step"><span class="step-num">1</span><h3>Wgrywasz produkty</h3><p>Import CSV albo podłączenie WooCommerce / Shopify. Ustawiasz cenę minimalną dla każdego produktu.</p></div>
+            <div class="step"><span class="step-num">2</span><h3>Sprawdzamy rynek</h3><p>PriceAI zbiera ceny konkurencji i pokazuje, gdzie jesteś za drogo, a gdzie zostawiasz pieniądze na stole.</p></div>
+            <div class="step"><span class="step-num">3</span><h3>Zatwierdzasz ceny</h3><p>Dostajesz propozycje z uzasadnieniem. Akceptujesz je albo odrzucasz, a każda zmiana trafia do historii.</p></div>
+        </div>
+    </div>
+
     <div class="features">
         <div class="feature-card">
             <div class="icon">🤖</div>
@@ -110,6 +159,7 @@
     </div>
 
     <footer style="text-align:center; padding:30px 20px 50px; color:#64748b; font-size:12px; border-top:1px solid #334155; margin-top:20px;">
+        <div style="margin-bottom:12px;">Pytania? Napisz: <a href="mailto:kontakt.priceaicloud@gmail.com" style="color:#94a3b8;">kontakt.priceaicloud@gmail.com</a> &middot; odpowiadam zwykle w ciągu doby (Jacob Kaczmarczyk, założyciel)</div>
         <a href="regulamin.html" style="color:#64748b; margin: 0 10px;">Regulamin</a>
         <a href="polityka-prywatnosci.html" style="color:#64748b; margin: 0 10px;">Polityka Prywatności</a>
     </footer>
