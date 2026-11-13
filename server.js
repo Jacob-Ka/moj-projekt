@@ -4235,10 +4235,13 @@ app.get('/api/statystyki', wymagajSesji, async (req, res) => {
 // ============== PRAWDZIWE AI (Claude) - SUGESTIA CENOWA ==============
 const GODZIN_WAZNOSCI_SUGESTII = 24; // "domyślnie AI sprawdza 1 na dobę"
 
-function czyMoznaUzycCache(produkt) {
+function czyMoznaUzycCache(produkt, wymus = false) {
     if (!produkt.sugerowana_cena || !produkt.ai_ostatnio_sprawdzono) return false;
     const cenaSieNieZmienila = produkt.ai_sprawdzona_cena_konkurencji === produkt.cena_konkurencji;
     const godzinyOdSprawdzenia = (Date.now() - new Date(produkt.ai_ostatnio_sprawdzono).getTime()) / (1000 * 60 * 60);
+    // "Od nowa" na życzenie klienta - działa TYLKO gdy sugestia jest nieaktualna
+    // (cena konkurencji się zmieniła) albo starsza niż 24h; w innym razie dalej cache.
+    if (wymus && (!cenaSieNieZmienila || godzinyOdSprawdzenia >= GODZIN_WAZNOSCI_SUGESTII)) return false;
     // Optymalizacja kosztów: jeśli cena konkurencji się nie zmieniła ODKĄD AI ostatnio
     // sprawdzało ten produkt, LUB minęło mniej niż 24h - nie płacimy za kolejne zapytanie,
     // tylko oddajemy poprzednią, wciąż aktualną sugestię.
@@ -4558,7 +4561,7 @@ app.post('/api/ai-sugestia/:id', wymagajSesji, limitAI, sprawdzDziennyLimit, asy
     } catch (e) { return res.status(500).json({ success: false, error: 'Błąd bazy danych.' }); }
     if (!produkt) return res.status(404).json({ success: false, error: 'Produkt nie istnieje.' });
 
-    if (czyMoznaUzycCache(produkt)) {
+    if (czyMoznaUzycCache(produkt, !!(req.body && req.body.wymus))) {
         return res.json({ success: true, sugerowana_cena: produkt.sugerowana_cena, uzasadnienie: produkt.rekomendacja, zbuforowane: true });
     }
 
@@ -5118,7 +5121,10 @@ let liczbaAktywnychPrzebiegow = 0;
 
 function sprawdzHarmonogramy() {
     const teraz = new Date();
-    const aktualnaMinuta = String(teraz.getHours()).padStart(2, '0') + ':' + String(teraz.getMinutes()).padStart(2, '0');
+    // Godzina harmonogramu liczy się po czasie klienta (na start Europe/Warsaw),
+    // a nie po czasie serwera (Railway działa w innej strefie).
+    const czesci = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(teraz);
+    const aktualnaMinuta = czesci.find(c => c.type === 'hour').value + ':' + czesci.find(c => c.type === 'minute').value;
     if (aktualnaMinuta === ostatnioObslozonaMinuta) return;
 
     db.all(`SELECT user_id FROM konfiguracja WHERE daily_auto_sync = 1 AND auto_reprice_time = ?`, [aktualnaMinuta], async (err, wiersze) => {

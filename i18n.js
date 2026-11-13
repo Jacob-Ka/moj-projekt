@@ -38,7 +38,7 @@ const TLUMACZENIA = {
         filter_all: 'Wszystkie', filter_attention: 'Wymagające uwagi ⚠️', filter_no_suggestion: 'Bez sugestii AI',
         search_ph: 'Szukaj produktu lub EAN...',
         btn_add_product: '➕ Dodaj produkt', btn_export_csv: '⬇️ Eksportuj CSV', btn_refresh: '🔄 Odśwież', data_refreshed_success: 'Dane odświeżone.',
-        btn_batch_auto: 'Włącz Auto-pricing', btn_batch_approve: 'Zatwierdź ceny AI', btn_batch_delete: '🗑️ Usuń zaznaczone',
+        btn_batch_auto: 'Włącz Auto-pricing', btn_batch_approve: 'Zastosuj zaznaczone', btn_batch_delete: '🗑️ Usuń zaznaczone',
         th_product: 'Produkt', th_ean_floor: 'Kod EAN / Floor Price', th_ean_floor_tip: 'Floor Price to najniższa dopuszczalna cena tego produktu (75% Twojej ceny bazowej) - system nigdy nie zasugeruje ceny niższej niż ta wartość.',
         th_your_price: 'Twoja cena', th_competitor: 'Konkurencja', th_suggested_price: 'Sugerowana cena (Marża)',
         th_ai_recommendation: 'Rekomendacja AI', th_ai_recommendation_tip: 'Kliknij „Generuj sugestię AI” przy produkcie - model przeanalizuje Twoją cenę i cenę konkurencji, po czym zaproponuje nową cenę wraz z uzasadnieniem.',

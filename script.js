@@ -900,12 +900,12 @@ function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
     }
 }
 
-async function generujSugestieAI(id, btnEl) {
+async function generujSugestieAI(id, btnEl, wymus = false) {
     if (btnEl) { btnEl.disabled = true; btnEl.innerText = t('analyzing'); }
     const data = await apiFetch(`/ai-sugestia/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jezyk: window.aktualnyJezyk || 'pl' })
+        body: JSON.stringify({ jezyk: window.aktualnyJezyk || 'pl', wymus })
     });
 
     if (data?.success) {
@@ -1188,9 +1188,18 @@ function renderujTabele(produkty) {
         const maSugestie = p.sugerowana_cena !== null && p.sugerowana_cena !== undefined && p.sugerowana_cena !== '';
         const isDanger = maSugestie && parseFloat(p.sugerowana_cena) < parseFloat(floorPrice);
 
+        // Sugestia NIE znika po ponownym "Wyszukaj". Oznaczamy ją jako nieaktualną
+        // tylko, gdy cena konkurencji faktycznie zmieniła się od jej wygenerowania,
+        // albo gdy minęło 24h - wtedy klient może wygenerować ją od nowa.
+        const cenaZmieniona = maSugestie && p.ai_sprawdzona_cena_konkurencji != null
+            && String(p.ai_sprawdzona_cena_konkurencji) !== String(p.cena_konkurencji ?? '');
+        const starsza24h = maSugestie && p.ai_ostatnio_sprawdzono
+            && (Date.now() - new Date(p.ai_ostatnio_sprawdzono).getTime()) >= 24 * 60 * 60 * 1000;
         const sugestiaHtml = maSugestie
             ? `<span style="color: ${isDanger ? '#ef4444' : '#4f46e5'}; font-weight: 700; font-size: 15px;">${p.sugerowana_cena} ${symbol}</span>
-               ${isDanger ? '<span class="margin-danger">⚠️ Poniżej Floor Price</span>' : ''}`
+               ${isDanger ? '<span class="margin-danger">⚠️ Poniżej Floor Price</span>' : ''}
+               ${cenaZmieniona ? '<div style="color:#fbbf24; font-size:11px; margin-top:2px;">⏳ nieaktualna - cena konkurencji się zmieniła</div>' : ''}
+               ${(cenaZmieniona || starsza24h) ? `<button class="chart-badge-btn" onclick="generujSugestieAI(${p.id}, this, true)">↻ Wygeneruj od nowa</button>` : ''}`
             : `<button class="chart-badge-btn" onclick="generujSugestieAI(${p.id}, this)">${t('btn_generate_ai')}</button>`;
 
         const rekomendacjaHtml = p.rekomendacja
@@ -1550,7 +1559,7 @@ function pokazPodgladZatwierdzenia(produkty) {
     if (btn) {
         const nowyBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(nowyBtn, btn);
-        nowyBtn.innerText = `Zatwierdź wszystkie (${produkty.length})`;
+        nowyBtn.innerText = `Zastosuj zaznaczone (${produkty.length})`;
         nowyBtn.addEventListener('click', async () => {
             if (modal) modal.style.display = 'none';
             let udane = 0, nieudane = 0;
