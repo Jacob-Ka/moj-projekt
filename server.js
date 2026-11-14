@@ -597,6 +597,9 @@ db.run(`CREATE TABLE IF NOT EXISTS limity_uzytkownika (
     plan TEXT DEFAULT 'FREE'
 )`);
 
+// Data końca ręcznie nadanego okresu próbnego (ISO). Po tej dacie konto samo wraca do FREE.
+db.run(`ALTER TABLE limity_uzytkownika ADD COLUMN trial_do TEXT`, () => { /* kolumna już istnieje - OK */ });
+
 db.run(`CREATE TABLE IF NOT EXISTS globalne_produkty (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT,
@@ -1691,7 +1694,7 @@ app.post('/api/admin/nadaj-plan', (req, res) => {
         if (err || !user) return res.status(404).json({ success: false, error: 'Nie znaleziono użytkownika o tym mailu - musi mieć już założone konto.' });
         const limity = LIMITY_PLANOW[plan];
         db.run(
-            `UPDATE limity_uzytkownika SET plan = ?, tokeny_ai = ?, limit_produktow = ? WHERE user_id = ?`,
+            `UPDATE limity_uzytkownika SET plan = ?, tokeny_ai = ?, limit_produktow = ?, trial_do = NULL WHERE user_id = ?`,
             [plan, limity.tokeny, limity.produkty, String(user.id)],
             (err) => {
                 if (err) return res.status(500).json({ success: false, error: 'Błąd nadawania planu.' });
@@ -1734,6 +1737,99 @@ app.post('/api/admin/polecenia', (req, res) => {
         }
     );
 });
+
+// Wspólna kontrola klucza admina dla nowych endpointów panelu (/admin.html).
+function sprawdzAdmina(req, res) {
+    if (!process.env.ADMIN_SECRET) {
+        res.status(403).json({ success: false, error: 'Panel wyłączony (brak ADMIN_SECRET w zmiennych środowiskowych).' });
+        return false;
+    }
+    const sekret = req.body && req.body.sekret;
+    if (!sekret || typeof sekret !== 'string') {
+        res.status(403).json({ success: false, error: 'Brak klucza dostępu.' });
+        return false;
+    }
+    const a = Buffer.from(sekret), b = Buffer.from(process.env.ADMIN_SECRET);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        res.status(403).json({ success: false, error: 'Nieprawidłowy klucz dostępu.' });
+        return false;
+    }
+    return true;
+}
+
+// Lista klientów z planem i datą końca próby - dla panelu admina.
+app.post('/api/admin/uzytkownicy', (req, res) => {
+    if (!sprawdzAdmina(req, res)) return;
+    db.all(
+        `SELECT u.email, u.utworzono, l.plan, l.limit_produktow, l.tokeny_ai, l.trial_do
+         FROM users u LEFT JOIN limity_uzytkownika l ON l.user_id = CAST(u.id AS TEXT)
+         ORDER BY u.id DESC LIMIT 300`,
+        [],
+        (err, wiersze) => {
+            if (err) return res.status(500).json({ success: false, error: 'Błąd pobierania listy.' });
+            res.json({ success: true, uzytkownicy: wiersze });
+        }
+    );
+});
+
+// Nadaje płatny plan na ograniczony czas (domyślnie 7 dni) bez karty.
+// Po upływie czasu konto samo wraca do FREE (patrz wygasTriale niżej).
+app.post('/api/admin/nadaj-trial', (req, res) => {
+    if (!sprawdzAdmina(req, res)) return;
+    const email = String((req.body && req.body.email) || '').toLowerCase().trim();
+    const plan = req.body && req.body.plan;
+    let dni = parseInt(req.body && req.body.dni, 10);
+    if (!Number.isFinite(dni) || dni < 1 || dni > 60) dni = 7;
+    if (!email) return res.status(400).json({ success: false, error: 'Podaj email użytkownika.' });
+    if (!PLANY_PLATNE.includes(plan)) return res.status(400).json({ success: false, error: 'Wybierz płatny plan.' });
+    db.get(`SELECT id FROM users WHERE email = ?`, [email], (err, user) => {
+        if (err || !user) return res.status(404).json({ success: false, error: 'Nie ma konta z tym mailem - klient musi je najpierw założyć (albo załóż je za niego).' });
+        const limity = LIMITY_PLANOW[plan];
+        const trialDo = new Date(Date.now() + dni * 24 * 60 * 60 * 1000).toISOString();
+        utworzLimityDlaUzytkownika(String(user.id), 'FREE', () => {
+            db.run(
+                `UPDATE limity_uzytkownika SET plan = ?, tokeny_ai = ?, limit_produktow = ?, trial_do = ? WHERE user_id = ?`,
+                [plan, limity.tokeny, limity.produkty, trialDo, String(user.id)],
+                (err2) => {
+                    if (err2) return res.status(500).json({ success: false, error: 'Błąd nadawania próby.' });
+                    res.json({ success: true, email, plan, dni, trial_do: trialDo });
+                }
+            );
+        });
+    });
+});
+
+// Cofa konto do FREE (ręcznie, z panelu).
+app.post('/api/admin/cofnij-do-free', (req, res) => {
+    if (!sprawdzAdmina(req, res)) return;
+    const email = String((req.body && req.body.email) || '').toLowerCase().trim();
+    db.get(`SELECT id FROM users WHERE email = ?`, [email], (err, user) => {
+        if (err || !user) return res.status(404).json({ success: false, error: 'Nie znaleziono użytkownika.' });
+        const w = LIMITY_PLANOW.FREE;
+        db.run(
+            `UPDATE limity_uzytkownika SET plan = 'FREE', tokeny_ai = ?, limit_produktow = ?, trial_do = NULL WHERE user_id = ?`,
+            [w.tokeny, w.produkty, String(user.id)],
+            (err2) => err2 ? res.status(500).json({ success: false, error: 'Błąd zapisu.' }) : res.json({ success: true, email })
+        );
+    });
+});
+
+// Co 30 minut: konta z minioną datą próby wracają do FREE.
+function wygasTriale() {
+    db.all(`SELECT user_id FROM limity_uzytkownika WHERE trial_do IS NOT NULL AND trial_do < ?`, [new Date().toISOString()], (err, wiersze) => {
+        if (err || !wiersze) return;
+        const w = LIMITY_PLANOW.FREE;
+        wiersze.forEach(r => {
+            db.run(
+                `UPDATE limity_uzytkownika SET plan = 'FREE', tokeny_ai = ?, limit_produktow = ?, trial_do = NULL WHERE user_id = ?`,
+                [w.tokeny, w.produkty, r.user_id],
+                () => dodajPowiadomienie(r.user_id, 'trial_koniec', 'Twój okres próbny się zakończył - konto wróciło do planu FREE. Napisz do nas, jeśli chcesz kontynuować.')
+            );
+        });
+    });
+}
+setInterval(wygasTriale, 30 * 60 * 1000);
+setTimeout(wygasTriale, 15 * 1000);
 
 // Ogólny przegląd biznesu - ilu masz łącznie użytkowników, ile na którym
 // planie, ilu realnie płaci, i przybliżony miesięczny przychód (licząc wg

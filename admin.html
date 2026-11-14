@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>PriceAI Cloud - Panel admina</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--line:#334155;--fg:#f8fafc;--mut:#94a3b8;--acc:#4f46e5;--ok:#22c55e;--bad:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:20px 16px 60px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1{margin:0;font-size:22px}h2{margin:0 0 12px;font-size:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,select{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px;min-width:0}
+input{flex:1 1 200px}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer}
+button.g{background:transparent;border:1px solid var(--line);color:var(--fg)}
+button.d{background:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+#msg{padding:10px 14px;border-radius:8px;display:none;font-size:14px}
+#msg.ok{display:block;background:rgba(34,197,94,.15);border:1px solid var(--ok)}
+#msg.err{display:block;background:rgba(239,68,68,.15);border:1px solid var(--bad)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mut);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+.mut{color:var(--mut);font-size:13px}
+.stat{display:flex;gap:12px;flex-wrap:wrap}.stat div{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:140px}
+.stat b{display:block;font-size:22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔧 Panel admina - PriceAI Cloud</h1>
+  <div id="msg"></div>
+
+  <div class="card">
+    <h2>1. Klucz dostępu</h2>
+    <div class="row">
+      <input type="password" id="sekret" placeholder="ADMIN_SECRET (ten z .env / Railway)" autocomplete="off">
+      <button onclick="odswiez()">Zaloguj i wczytaj</button>
+    </div>
+    <p class="mut">Klucz nie jest nigdzie zapisywany - po odświeżeniu strony trzeba wpisać go ponownie.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. Przegląd</h2>
+    <div class="row" style="margin-bottom:12px">
+      <button class="g" onclick="statystyki()">📊 Statystyki</button>
+      <button class="g" onclick="polecenia()">🤝 Polecenia</button>
+    </div>
+    <div id="stat" class="stat"></div>
+    <div id="pol" class="tw"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Nadaj klientowi plan</h2>
+    <div class="row">
+      <input type="email" id="email" placeholder="email klienta (konto musi już istnieć)">
+      <select id="plan"></select>
+      <input type="number" id="dni" value="7" min="1" max="60" style="flex:0 0 90px" title="dni próby">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="trial()">⏳ Nadaj próbę (dni)</button>
+      <button class="g" onclick="naStale()">✅ Nadaj na stałe</button>
+      <button class="d" onclick="doFree()">↩️ Cofnij do FREE</button>
+    </div>
+    <p class="mut">Próba = płatny plan bez karty, po upływie dni konto samo wraca do FREE.</p>
+  </div>
+
+  <div class="card">
+    <h2>4. Klienci</h2>
+    <div class="tw"><table><thead><tr><th>Email</th><th>Plan</th><th>Produkty</th><th>Próba do</th><th>Założone</th><th></th></tr></thead><tbody id="lista"></tbody></table></div>
+  </div>
+</div>
+
+<script>
+const PLANY = ['STARTER','PRO','BUSINESS','SCALE','ENTERPRISE'];
+const $ = id => document.getElementById(id);
+$('plan').innerHTML = PLANY.map(p => `<option>${p}</option>`).join('');
+$('plan').value = 'PRO';
+
+function msg(t, ok) { const m = $('msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function api(sciezka, dane) {
+  const sekret = $('sekret').value.trim();
+  if (!sekret) { msg('Wpisz klucz dostępu.', false); return null; }
+  try {
+    const r = await fetch('/api/admin/' + sciezka, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sekret, ...dane }) });
+    const j = await r.json();
+    if (!j.success) { msg(j.error || 'Błąd.', false); return null; }
+    return j;
+  } catch (e) { msg('Brak połączenia z serwerem (uruchom node server.js, nie Live Server).', false); return null; }
+}
+function dane() { return { email: $('email').value.trim(), plan: $('plan').value, dni: $('dni').value }; }
+
+async function odswiez() {
+  const j = await api('uzytkownicy', {});
+  if (!j) return;
+  msg('Połączono. Klientów: ' + j.uzytkownicy.length, true);
+  $('lista').innerHTML = j.uzytkownicy.map(u => `<tr>
+    <td>${esc(u.email)}</td><td><b>${esc(u.plan || '-')}</b></td><td>${esc(u.limit_produktow ?? '-')}</td>
+    <td>${u.trial_do ? new Date(u.trial_do).toLocaleString('pl-PL') : '-'}</td>
+    <td>${esc(u.utworzono || '')}</td>
+    <td><button class="g" onclick="wybierz('${esc(u.email)}')">wybierz</button></td></tr>`).join('');
+}
+function wybierz(e) { $('email').value = e; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+async function trial() {
+  const j = await api('nadaj-trial', dane()); if (!j) return;
+  msg(`Gotowe: ${j.email} ma ${j.plan} na ${j.dni} dni (do ${new Date(j.trial_do).toLocaleString('pl-PL')}).`, true); odswiez();
+}
+async function naStale() {
+  if (!confirm('Nadać ten plan na stałe, bez daty końca?')) return;
+  const j = await api('nadaj-plan', dane()); if (!j) return;
+  msg(`Gotowe: ${j.email} ma teraz plan ${j.plan} na stałe.`, true); odswiez();
+}
+async function doFree() {
+  if (!confirm('Cofnąć to konto do FREE?')) return;
+  const j = await api('cofnij-do-free', dane()); if (!j) return;
+  msg(`Gotowe: ${j.email} wrócił do FREE.`, true); odswiez();
+}
+async function statystyki() {
+  const j = await api('statystyki', {}); if (!j) return;
+  $('stat').innerHTML = `<div><b>${j.lacznie_uzytkownikow}</b>kont łącznie</div><div><b>${j.placacych_klientow}</b>płacących</div><div><b>${j.szacowany_przychod_miesieczny_zl} zł</b>szac. przychód / mies.</div>` +
+    j.rozklad_wg_planow.map(w => `<div><b>${w.liczba}</b>${esc(w.plan)}</div>`).join('');
+}
+async function polecenia() {
+  const j = await api('polecenia', {}); if (!j) return;
+  $('pol').innerHTML = j.polecenia.length ? '<table><thead><tr><th>Polecający</th><th>Email</th><th>Plan</th><th>Założone</th></tr></thead><tbody>' +
+    j.polecenia.map(p => `<tr><td>${esc(p.polecony_przez)}</td><td>${esc(p.email)}</td><td>${esc(p.plan || '-')}</td><td>${esc(p.utworzono || '')}</td></tr>`).join('') + '</tbody></table>' : '<p class="mut">Brak poleceń.</p>';
+}
+</script>
+</body>
+</html>
