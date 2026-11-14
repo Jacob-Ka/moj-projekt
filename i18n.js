@@ -556,6 +556,8 @@ function ustawJezyk(kod) {
         el.title = t(el.getAttribute('data-i18n-title'));
     });
 
+    if (typeof tlumaczStatyczne === 'function') tlumaczStatyczne(kod);
+
     if (typeof renderujTabele === 'function' && typeof globalnyKatalog !== 'undefined') renderujTabele(globalnyKatalog);
     if (typeof pobierzZamowienia === 'function' && document.getElementById('tabela-zamowienia')) pobierzZamowienia();
     if (typeof pobierzMagazyn === 'function' && document.getElementById('tabela-magazyn')) pobierzMagazyn();
@@ -569,3 +571,135 @@ function inicjujJezyk() {
 }
 
 document.addEventListener('DOMContentLoaded', inicjujJezyk);
+
+/* ===== Statyczne teksty z index.html bez data-i18n: słownik PL -> EN =====
+   Dla języków innych niż PL używamy angielskiego (lepsze niż polski w interfejsie
+   zagranicznego użytkownika). Oryginały są zapamiętywane, więc powrót do PL przywraca tekst. */
+const PL_EN_STATYCZNE = {
+    '📄 Inny system (import/eksport CSV)': '📄 Other system (CSV import/export)',
+    'Wybierz platformę Twojego sklepu. Konkurencja może być z DOWOLNEGO sklepu, niezależnie od tego wyboru.': 'Choose your store platform. Competitors can be from ANY store, regardless of this choice.',
+    '🌐 Pełny Zasięg Globalny (Wszystkie Rynki Światowe)': '🌐 Full Global Reach (All World Markets)',
+    '🇪🇺 Strefa Europejska (Jednolity Rynek UE)': '🇪🇺 European Zone (EU Single Market)',
+    '🌎 Ameryka Północna (US / CA / MX)': '🌎 North America (US / CA / MX)',
+    '🌏 Azja i Pacyfik (APAC)': '🌏 Asia & Pacific (APAC)',
+    '🔀 Auto-Detekcja & Przeliczanie w locie': '🔀 Auto-detect & on-the-fly conversion',
+    'PLN (zł) - Złoty polski': 'PLN (zł) - Polish zloty',
+    'EUR (€) - Euro': 'EUR (€) - Euro',
+    'USD ($) - Dolar amerykański': 'USD ($) - US dollar',
+    'GBP (£) - Funt brytyjski': 'GBP (£) - British pound',
+    'CHF (CHF) - Frank szwajcarski': 'CHF (CHF) - Swiss franc',
+    'JPY (¥) - Jen japoński': 'JPY (¥) - Japanese yen',
+    'CAD (C$) - Dolar kanadyjski': 'CAD (C$) - Canadian dollar',
+    'AUD (A$) - Dolar australijski': 'AUD (A$) - Australian dollar',
+    'SEK (kr) - Korona szwedzka': 'SEK (kr) - Swedish krona',
+    'NOK (kr) - Korona norweska': 'NOK (kr) - Norwegian krone',
+    'DKK (kr) - Korona duńska': 'DKK (kr) - Danish krone',
+    'CZK (Kč) - Korona czeska': 'CZK (Kč) - Czech koruna',
+    'CNY (¥) - Juan chiński': 'CNY (¥) - Chinese yuan',
+    'INR (₹) - Rupia indyjska': 'INR (₹) - Indian rupee',
+    'BRL (R$) - Real brazylijski': 'BRL (R$) - Brazilian real',
+    'MXN (Mex$) - Peso meksykańskie': 'MXN (Mex$) - Mexican peso',
+    '💡 Tryb wyliczania cen': '💡 Price calculation mode',
+    'AI: pełna analiza modelem językowym (kosztuje token za sugestię). Reguła: darmowe, natychmiastowe wyliczenie matematyczne na bazie ceny konkurencji - bez AI, bez tokenów. Floor Price jest respektowany zawsze, niezależnie od trybu.': 'AI: full analysis by a language model (costs a token per suggestion). Rule: free, instant mathematical calculation based on the competitor price - no AI, no tokens. Floor Price is always respected, whatever the mode.',
+    '(co to znaczy?)': '(what does this mean?)',
+    'Wybierz, czy sugestie cen ma liczyć AI (dokładniejsze, ale zużywa tokeny), czy prosta darmowa reguła.': 'Choose whether price suggestions are calculated by AI (more accurate, but uses tokens) or by a simple free rule.',
+    '🤖 AI (Claude analizuje każdy produkt)': '🤖 AI (Claude analyzes every product)',
+    '📉 Reguła: % poniżej konkurencji': '📉 Rule: % below competitor',
+    '💲 Reguła: stała kwota poniżej konkurencji (np. 0.50)': '💲 Rule: fixed amount below competitor (e.g. 0.50)',
+    '🎯 Reguła: dopasuj cenę konkurencji': '🎯 Rule: match competitor price',
+    '🧾 Ustawienia VAT': '🧾 VAT settings',
+    'Ceny konkurencji, które widzisz publicznie w sklepach, są zwykle cenami brutto (z VAT). Żeby porównanie z Twoją ceną było uczciwe, musimy wiedzieć, czy Twoje ceny w sklepie też zawierają VAT, i jaka jest stawka. Dla WooCommerce próbujemy to wykryć automatycznie z ustawień sklepu - poniżej możesz to sprawdzić i w razie potrzeby poprawić ręcznie. Dla Shopify i CSV wykrywanie automatyczne nie działa - ustaw to ręcznie, inaczej porównania i sugerowane ceny mogą być błędne o całą stawkę VAT.': 'Competitor prices you see publicly in stores are usually gross prices (incl. VAT/sales tax). For a fair comparison with your price we need to know whether your store prices also include tax, and the rate. For WooCommerce we try to detect this automatically from the store settings - you can check and correct it below. For Shopify and CSV automatic detection does not work - set it manually, otherwise comparisons and suggested prices may be off by the full tax rate. (In the US, shelf prices usually exclude sales tax - untick the box below.)',
+    'Dla WooCommerce wykrywamy to automatycznie przy podłączaniu sklepu - poniższe pola możesz zostawić puste, chyba że chcesz nadpisać wykrytą wartość. Dla Shopify i CSV ustaw to ręcznie.': 'For WooCommerce we detect this automatically when you connect the store - leave the fields below empty unless you want to override the detected value. For Shopify and CSV set it manually.',
+    'Moje ceny w sklepie zawierają VAT (brutto)': 'My store prices include VAT/tax (gross)',
+    'Stawka VAT:': 'VAT rate:',
+    '🛡️ Domyślny procent Floor Price': '🛡️ Default Floor Price percentage',
+    'Floor Price to najniższa cena, poniżej której system nigdy nie zejdzie. To ustawienie dotyczy WSZYSTKICH produktów, chyba że konkretny produkt ma własne, indywidualne ustawienie (edytowalne w tabeli produktów). Przykład: 80% oznacza, że przy cenie 120 zł Floor Price wyniesie 96 zł.': 'Floor Price is the lowest price the system will never go below. This setting applies to ALL products unless a specific product has its own individual setting (editable in the products table). Example: 80% means that at a price of 120 the Floor Price will be 96.',
+    'Jeśli różne produkty mają różne marże, ustaw tu bezpieczny procent dla większości, a wąskomarżowe produkty nadpisz indywidualnie w tabeli.': 'If different products have different margins, set a safe percentage here for most of them and override low-margin products individually in the table.',
+    '% Twojej ceny': '% of your price',
+    'Zaznaczono 0 produktów': '0 products selected',
+    '⏰ Automatyczny harmonogram cenowy': '⏰ Automatic pricing schedule',
+    '📄 Import / Eksport CSV': '📄 CSV Import / Export',
+    'Uniwersalny sposób na dodanie produktów niezależnie od platformy sklepu. Kolumny: nazwa, ean, twoja_cena, cena_konkurencji, url_konkurencja.': 'A universal way to add products regardless of store platform. Columns: name, ean, price, competitor_price, competitor_url, currency (English column names such as name, gtin, price are recognised).',
+    '⬆️ Importuj z CSV': '⬆️ Import from CSV',
+    '⬇️ Eksportuj do CSV': '⬇️ Export to CSV',
+    '📋 Podgląd zmian cen': '📋 Price change preview',
+    'Sprawdź poniższe zmiany przed zatwierdzeniem - ceny zostaną wysłane do sklepu (jeśli produkt jest połączony).': 'Review the changes below before approving - prices will be sent to your store (if the product is connected).',
+    'Produkt': 'Product', 'Stara cena': 'Old price', 'Nowa cena': 'New price', 'Zmiana': 'Change',
+    'Anuluj': 'Cancel', 'Zastosuj zaznaczone': 'Apply selected',
+    'PLN (zł)': 'PLN (zł)',
+    '🇵🇱 Polska': '🇵🇱 Poland', '🇩🇪 Niemcy': '🇩🇪 Germany', '🇫🇷 Francja': '🇫🇷 France', '🇪🇸 Hiszpania': '🇪🇸 Spain',
+    '🇮🇹 Włochy': '🇮🇹 Italy', '🇳🇱 Holandia': '🇳🇱 Netherlands', '🇦🇹 Austria': '🇦🇹 Austria', '🇧🇪 Belgia': '🇧🇪 Belgium',
+    '🇵🇹 Portugalia': '🇵🇹 Portugal', '🇮🇪 Irlandia': '🇮🇪 Ireland', '🇺🇸 USA': '🇺🇸 USA', '🇬🇧 Wielka Brytania': '🇬🇧 United Kingdom',
+    '🇨🇭 Szwajcaria': '🇨🇭 Switzerland', '🇯🇵 Japonia': '🇯🇵 Japan', '🇨🇦 Kanada': '🇨🇦 Canada', '🇦🇺 Australia': '🇦🇺 Australia',
+    '🇸🇪 Szwecja': '🇸🇪 Sweden', '🇳🇴 Norwegia': '🇳🇴 Norway', '🇩🇰 Dania': '🇩🇰 Denmark', '🇨🇿 Czechy': '🇨🇿 Czechia',
+    '🇨🇳 Chiny': '🇨🇳 China', '🇮🇳 Indie': '🇮🇳 India', '🇧🇷 Brazylia': '🇧🇷 Brazil', '🇲🇽 Meksyk': '🇲🇽 Mexico',
+    'Nowe': 'New', 'Opłacone': 'Paid', 'Do wysyłki': 'To ship', 'Wysłane': 'Shipped', 'Zrealizowane': 'Completed', 'Anulowane': 'Cancelled',
+    'Witaj w PriceAI Cloud 👋': 'Welcome to PriceAI Cloud 👋',
+    'Pomiń kreator': 'Skip wizard', '← Wstecz': '← Back', 'Dalej →': 'Next →',
+    '🔔 Powiadomienia': '🔔 Notifications', 'Oznacz wszystkie': 'Mark all as read',
+    'Ustawienia': 'Settings',
+    'np. https://twojsklep.pl': 'e.g. https://yourstore.com',
+    'np. 23': 'e.g. 20',
+    'Szukaj produktu lub EAN...': 'Search product or EAN/GTIN...',
+    'Nazwa produktu': 'Product name',
+    'Kod EAN (opcjonalnie)': 'EAN / GTIN / UPC (optional)',
+    'Twoja cena': 'Your price',
+    'Cena konkurencji (opcjonalnie)': 'Competitor price (optional)',
+    'Link do oferty konkurencji (opcjonalnie)': 'Link to competitor offer (optional)',
+    'Numer zamówienia (np. #ORD-001)': 'Order number (e.g. #ORD-001)',
+    'Klient': 'Customer',
+    'Wartość zamówienia': 'Order value',
+    'SKU / EAN (opcjonalnie)': 'SKU / EAN (optional)',
+    'Ilość dostępna': 'Quantity in stock',
+    'Nazwa magazynu (opcjonalnie)': 'Warehouse name (optional)',
+    'Hasło': 'Password', 'Obecne hasło': 'Current password', 'Nowe hasło': 'New password',
+    'Potwierdź nowe hasło': 'Confirm new password',
+    'Zapytaj o cokolwiek...': 'Ask anything...'
+};
+
+const TLUM_ATRYBUTY = ['placeholder', 'data-tip', 'title'];
+const _tlumOryginaly = new WeakMap();
+
+function tlumaczStatyczne(kod) {
+    if (!document.body) return;
+    const doEN = kod !== 'pl';
+    const przetworz = (orig) => {
+        const klucz = orig.trim();
+        const tl = PL_EN_STATYCZNE[klucz];
+        if (!tl) return orig;
+        return orig.replace(klucz, tl);
+    };
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(n) {
+            const p = n.parentElement;
+            if (!p || /^(SCRIPT|STYLE|TEXTAREA)$/.test(p.tagName)) return NodeFilter.FILTER_REJECT;
+            if (p.closest('[data-i18n],[data-i18n-html]')) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+        }
+    });
+    const wezly = [];
+    while (walker.nextNode()) wezly.push(walker.currentNode);
+    wezly.forEach(n => {
+        if (!_tlumOryginaly.has(n)) {
+            if (!PL_EN_STATYCZNE[n.nodeValue.trim()]) return;
+            _tlumOryginaly.set(n, n.nodeValue);
+        }
+        const orig = _tlumOryginaly.get(n);
+        n.nodeValue = doEN ? przetworz(orig) : orig;
+    });
+    document.querySelectorAll('[placeholder],[data-tip],[title]').forEach(el => {
+        TLUM_ATRYBUTY.forEach(attr => {
+            if (!el.hasAttribute(attr)) return;
+            if (el.hasAttribute('data-i18n-ph') && attr === 'placeholder') return;
+            if (el.hasAttribute('data-i18n-tip') && attr === 'data-tip') return;
+            if (el.hasAttribute('data-i18n-title') && attr === 'title') return;
+            const klucz = 'data-pl-orig-' + attr;
+            if (!el.hasAttribute(klucz)) {
+                if (!PL_EN_STATYCZNE[el.getAttribute(attr).trim()]) return;
+                el.setAttribute(klucz, el.getAttribute(attr));
+            }
+            const orig = el.getAttribute(klucz);
+            el.setAttribute(attr, doEN ? przetworz(orig) : orig);
+        });
+    });
+}

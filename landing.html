@@ -312,7 +312,7 @@
 
         async function uruchomDemo() {
             try {
-                const res = await fetch(`${API}/demo/start`, { method: 'POST', credentials: 'include' });
+                const res = await fetch(`${API}/demo/start`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jezyk: (function(){ try { return localStorage.getItem('jezyk_priceai') || 'pl'; } catch(e) { return 'pl'; } })() }) });
                 const data = await res.json();
                 if (data.success) window.location.href = 'index.html';
                 else alert('Nie udało się uruchomić DEMO. Sprawdź czy serwer działa.');

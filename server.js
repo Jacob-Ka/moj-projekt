@@ -1310,9 +1310,17 @@ app.post('/api/demo/start', (req, res) => {
         `INSERT INTO globalne_produkty (user_id, nazwa, ean, waluta, twoja_cena, url_konkurencja, cena_konkurencji, sugerowana_cena, rekomendacja, data)
          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`
     );
-    const dzis = new Date().toLocaleDateString('pl-PL');
-    stmt.run(guestId, 'Przykładowy Rower Miejski (DEMO)', '0000000000001', 'PLN', '2400.00', '', '2350.00', dzis);
-    stmt.run(guestId, 'Przykładowe Słuchawki Bezprzewodowe (DEMO)', '0000000000002', 'PLN', '249.00', '', '229.00', dzis);
+    const jezykDemo = ['pl', 'en', 'es', 'de', 'fr'].includes(req.body && req.body.jezyk) ? req.body.jezyk : 'pl';
+    const DEMO_DANE = {
+        pl: { loc: 'pl-PL', w: 'PLN', p: [['Przykładowy Rower Miejski (DEMO)', '2400.00', '2350.00'], ['Przykładowe Słuchawki Bezprzewodowe (DEMO)', '249.00', '229.00']] },
+        en: { loc: 'en-US', w: 'USD', p: [['Sample City Bike (DEMO)', '599.00', '589.00'], ['Sample Wireless Headphones (DEMO)', '129.00', '119.00']] },
+        es: { loc: 'es-ES', w: 'EUR', p: [['Bicicleta Urbana de Ejemplo (DEMO)', '549.00', '539.00'], ['Auriculares Inalámbricos de Ejemplo (DEMO)', '119.00', '109.00']] },
+        de: { loc: 'de-DE', w: 'EUR', p: [['Beispiel-Citybike (DEMO)', '549.00', '539.00'], ['Beispiel-Kabellose Kopfhörer (DEMO)', '119.00', '109.00']] },
+        fr: { loc: 'fr-FR', w: 'EUR', p: [['Vélo de Ville Exemple (DEMO)', '549.00', '539.00'], ['Casque Sans Fil Exemple (DEMO)', '119.00', '109.00']] }
+    };
+    const dd = DEMO_DANE[jezykDemo];
+    const dzis = new Date().toLocaleDateString(dd.loc);
+    dd.p.forEach((p, i) => stmt.run(guestId, p[0], '000000000000' + (i + 1), dd.w, p[1], '', p[2], dzis));
     stmt.finalize();
 
     res.json({ success: true, demo: true });
