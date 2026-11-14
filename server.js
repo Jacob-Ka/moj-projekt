@@ -2367,7 +2367,7 @@ app.post('/api/import-oferty', wymagajSesji, async (req, res) => {
     // nie zacznie samodzielnie zmieniać cen w czyimś sklepie, dopóki klient
     // sam, świadomie tego nie włączy.
     const autoPricingWartosc = globalAutoPricing === true ? 1 : 0;
-    const trybCenowyWartosc = (trybCenowy === 'PROCENT_PONIZEJ_KONKURENCJI' || trybCenowy === 'DOPASUJ_KONKURENCJE') ? trybCenowy : 'AI';
+    const trybCenowyWartosc = (trybCenowy === 'PROCENT_PONIZEJ_KONKURENCJI' || trybCenowy === 'KWOTA_PONIZEJ_KONKURENCJI' || trybCenowy === 'DOPASUJ_KONKURENCJE') ? trybCenowy : 'AI';
     const wartoscRegulyWartosc = (typeof wartoscReguly === 'number' && wartoscReguly > 0) ? wartoscReguly : 5;
     // Ręczne ustawienie VAT z formularza - jeśli klient wpisał konkretną
     // stawkę, traktujemy to jako ŚWIADOMY wybór, który ma pierwszeństwo
@@ -2447,7 +2447,7 @@ app.get('/api/konfiguracja', wymagajSesji, (req, res) => {
 app.put('/api/tryb-cenowy', wymagajSesji, async (req, res) => {
     const { trybCenowy, wartoscReguly } = req.body;
     const userId = req.session.userId;
-    const trybCenowyWartosc = (trybCenowy === 'PROCENT_PONIZEJ_KONKURENCJI' || trybCenowy === 'DOPASUJ_KONKURENCJE') ? trybCenowy : 'AI';
+    const trybCenowyWartosc = (trybCenowy === 'PROCENT_PONIZEJ_KONKURENCJI' || trybCenowy === 'KWOTA_PONIZEJ_KONKURENCJI' || trybCenowy === 'DOPASUJ_KONKURENCJE') ? trybCenowy : 'AI';
     const wartoscRegulyWartosc = (typeof wartoscReguly === 'number' && wartoscReguly > 0) ? wartoscReguly : 5;
     try {
         await dbRunAsync(
@@ -2631,7 +2631,10 @@ app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
         const istniejaceMapa = new Map((istniejace || []).filter(p => p.ean).map(p => [p.ean, p]));
         const liczbaObecnych = (istniejace || []).length;
 
-        const konfiguracja = await dbGetAsync(`SELECT global_auto_pricing FROM konfiguracja WHERE user_id = ?`, [userId]);
+        const konfiguracja = await dbGetAsync(`SELECT global_auto_pricing, waluta FROM konfiguracja WHERE user_id = ?`, [userId]);
+        // Waluta importowanych produktów: kolumna 'waluta' w wierszu > waluta sklepu z konfiguracji > PLN.
+        const WALUTY_OBSLUGIWANE = ['PLN', 'USD', 'EUR', 'GBP', 'CHF', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK', 'CZK', 'JPY'];
+        const walutaDomyslna = WALUTY_OBSLUGIWANE.includes(String(konfiguracja?.waluta || '').toUpperCase()) ? String(konfiguracja.waluta).toUpperCase() : 'PLN';
         // Ten sam bezpieczny domyślny wybór co przy imporcie z
         // WooCommerce/Shopify - WYŁĄCZONE, dopóki klient sam świadomie nie
         // włączy (patrz komentarz przy autoPricingWartosc wyżej w pliku).
@@ -2646,11 +2649,14 @@ app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
 
         for (const w of wiersze) {
             const nazwa = String(w.nazwa || '').trim();
-            const twojaCena = parseFloat(w.twoja_cena);
+            const twojaCena = parsujCene(w.twoja_cena);
             if (!nazwa || isNaN(twojaCena) || twojaCena <= 0) { pominieto++; continue; }
+            const walutaWiersza = String(w.waluta || '').trim().toUpperCase();
+            const waluta = WALUTY_OBSLUGIWANE.includes(walutaWiersza) ? walutaWiersza : walutaDomyslna;
             const ean = String(w.ean || '').trim();
             const cenaStr = twojaCena.toFixed(2);
-            const cenaKonkurencjiStr = w.cena_konkurencji ? String(parseFloat(w.cena_konkurencji).toFixed(2)) : '';
+            const cenaKonkurencjiLiczba = w.cena_konkurencji ? parsujCene(w.cena_konkurencji) : NaN;
+            const cenaKonkurencjiStr = !isNaN(cenaKonkurencjiLiczba) && cenaKonkurencjiLiczba > 0 ? cenaKonkurencjiLiczba.toFixed(2) : '';
             const urlKonkurencji = String(w.url_konkurencja || '').trim();
 
             const istniejacy = ean ? istniejaceMapa.get(ean) : null;
@@ -2673,7 +2679,7 @@ app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
             await dbRunAsync(
                 `INSERT INTO globalne_produkty (user_id, nazwa, ean, waluta, twoja_cena, cena_bazowa, url_konkurencja, cena_konkurencji, sugerowana_cena, rekomendacja, data, auto_pricing)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
-                [userId, nazwa, ean, 'PLN', cenaStr, cenaStr, urlKonkurencji, cenaKonkurencjiStr, dzis, autoPricing]
+                [userId, nazwa, ean, waluta, cenaStr, cenaStr, urlKonkurencji, cenaKonkurencjiStr, dzis, autoPricing]
             );
             zaimportowano++;
             miejsceDostepne--;
@@ -2775,6 +2781,57 @@ app.post('/api/produkty/auto-wsadowo', wymagajSesji, (req, res) => {
 });
 
 // ============== AUTOMATYCZNE POBIERANIE CENY KONKURENCJI ==============
+// ============== UNIWERSALNY PARSER CEN (PL / US / UK / DE / FR) ==============
+// Jedno miejsce, które zamienia tekst ceny na liczbę. Wcześniej było kilka
+// kopii "replace(',', '.')", które psuły ceny w formacie zachodnim:
+// "$1,299.99" dawało 1.299, a "1.299,99 €" też 1.299. Zasada: gdy w tekście
+// są OBA separatory, dziesiętnym jest ten, który występuje OSTATNI; gdy jest
+// tylko jeden, a po nim dokładnie 3 cyfry i przed nim 1-3 cyfry (różne od
+// zera), to jest to separator tysięcy ("1,299", "1.299"); w innych
+// przypadkach to separator dziesiętny ("19,99", "19.99", "0.999").
+// Zwraca liczbę albo NaN (tak jak parseFloat), nigdy nie rzuca wyjątku.
+function parsujCene(wejscie) {
+    if (typeof wejscie === 'number') return isFinite(wejscie) ? wejscie : NaN;
+    if (wejscie === null || wejscie === undefined) return NaN;
+    // Zostawiamy tylko cyfry i separatory; spacje (także twarde, wąskie i
+    // apostrof szwajcarski) są separatorami tysięcy, więc znikają.
+    let t = String(wejscie).replace(/[\s  ']/g, '');
+    const dopasowanie = t.match(/\d[\d.,]*|[.,]\d+/);
+    if (!dopasowanie) return NaN;
+    t = dopasowanie[0].replace(/[.,]+$/, '');
+    if (/^[.,]/.test(t)) t = '0' + t; // ".99" -> "0.99" // końcowa kropka/przecinek to znak interpunkcyjny, nie część liczby
+    const ostatniaKropka = t.lastIndexOf('.');
+    const ostatniPrzecinek = t.lastIndexOf(',');
+    let dziesietny = null;
+    if (ostatniaKropka !== -1 && ostatniPrzecinek !== -1) {
+        dziesietny = ostatniaKropka > ostatniPrzecinek ? '.' : ',';
+    } else {
+        const sep = ostatniaKropka !== -1 ? '.' : (ostatniPrzecinek !== -1 ? ',' : null);
+        if (sep) {
+            const ileSep = t.split(sep).length - 1;
+            const czescPoSep = t.slice(t.lastIndexOf(sep) + 1);
+            const czescPrzedPierwszym = t.slice(0, t.indexOf(sep));
+            if (ileSep > 1) {
+                dziesietny = null; // np. "1.299.999" - same separatory tysięcy
+            } else if (czescPoSep.length === 3 && czescPrzedPierwszym.length >= 1 && czescPrzedPierwszym.length <= 3 && /[1-9]/.test(czescPrzedPierwszym)) {
+                dziesietny = null; // "1,299" / "1.299" - tysiące
+            } else {
+                dziesietny = sep;
+            }
+        }
+    }
+    let liczba;
+    if (dziesietny === null) {
+        liczba = t.replace(/[.,]/g, '');
+    } else {
+        const cz = t.split(dziesietny);
+        const ulamek = cz.pop();
+        liczba = cz.join('').replace(/[.,]/g, '') + '.' + ulamek;
+    }
+    const wynik = parseFloat(liczba);
+    return isFinite(wynik) ? wynik : NaN;
+}
+
 // Odczytuje cenę ze strony konkurencji na podstawie danych strukturalnych
 // (schema.org JSON-LD i meta tagi Open Graph), które większość sklepów
 // (w tym WooCommerce) i tak publikuje na stronie produktu z myślą o Google
@@ -2784,12 +2841,12 @@ function wyciagnijCeneZJsonLd(obiekt) {
     if (obiekt.offers) {
         const oferta = Array.isArray(obiekt.offers) ? obiekt.offers[0] : obiekt.offers;
         if (oferta && oferta.price) {
-            const cena = parseFloat(String(oferta.price).replace(',', '.'));
+            const cena = parsujCene(oferta.price);
             if (!isNaN(cena)) return cena;
         }
     }
     if (obiekt.price) {
-        const cena = parseFloat(String(obiekt.price).replace(',', '.'));
+        const cena = parsujCene(obiekt.price);
         if (!isNaN(cena)) return cena;
     }
     return null;
@@ -2988,7 +3045,7 @@ function wyciagnijCeneZDowolnegoJson(dane, glebokosc = 0) {
     const mozliwePola = ['price', 'regular_price', 'salePrice', 'sale_price', 'amount', 'cena', 'finalPrice', 'final_price', 'currentPrice', 'value'];
     for (const pole of mozliwePola) {
         if (dane[pole] !== undefined && dane[pole] !== null) {
-            const cena = parseFloat(String(dane[pole]).replace(',', '.'));
+            const cena = parsujCene(dane[pole]);
             if (!isNaN(cena) && cena > 0) return cena;
         }
     }
@@ -3037,7 +3094,7 @@ function wyciagnijWszystkieKandydatoweCeny(html) {
     for (const wzorzec of wzorceMikrodanych) {
         const dopasowanie = html.match(wzorzec);
         if (dopasowanie) {
-            const cena = parseFloat(dopasowanie[1].replace(/\s/g, '').replace(',', '.'));
+            const cena = parsujCene(dopasowanie[1]);
             if (!isNaN(cena) && cena > 0) { wynik.mikrodane = cena; break; }
         }
     }
@@ -3049,7 +3106,7 @@ function wyciagnijWszystkieKandydatoweCeny(html) {
     for (const wzorzec of wzorceMeta) {
         const dopasowanie = html.match(wzorzec);
         if (dopasowanie) {
-            const cena = parseFloat(dopasowanie[1].replace(',', '.'));
+            const cena = parsujCene(dopasowanie[1]);
             if (!isNaN(cena)) { wynik.meta = cena; break; }
         }
     }
@@ -3059,7 +3116,7 @@ function wyciagnijWszystkieKandydatoweCeny(html) {
     // przycisku "Dodaj do koszyka"), gdzie JSON-LD bywa pomijany.
     const dopasowanieDataPrice = html.match(/data-(?:price|product-price)=["']([\d.,]+)["']/i);
     if (dopasowanieDataPrice) {
-        const cena = parseFloat(dopasowanieDataPrice[1].replace(',', '.'));
+        const cena = parsujCene(dopasowanieDataPrice[1]);
         if (!isNaN(cena) && cena > 0) wynik.dataAtrybut = cena;
     }
 
@@ -3072,9 +3129,9 @@ function wyciagnijWszystkieKandydatoweCeny(html) {
     let dopasowanieCeny;
     while ((dopasowanieCeny = wzorzecElementowCeny.exec(html)) !== null) {
         const fragment = dopasowanieCeny[1].replace(/<[^>]+>/g, ' ');
-        const liczba = fragment.match(/(\d{1,3}(?:[ .]?\d{3})*(?:[.,]\d{2})?)\s*(zł|PLN|€|EUR|\$|USD|£|GBP)?/i);
+        const liczba = fragment.match(/(\d{1,3}(?:[ .,\u00a0\u202f]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(zł|PLN|€|EUR|\$|USD|£|GBP)?/i);
         if (liczba) {
-            const wartosc = parseFloat(liczba[1].replace(/\s/g, '').replace(',', '.'));
+            const wartosc = parsujCene(liczba[1]);
             if (!isNaN(wartosc) && wartosc > 0) { wynik.element = wartosc; break; }
         }
     }
@@ -3338,6 +3395,13 @@ function wariantyEan(ean) {
     }
     if (samecyfry.length === 12) {
         warianty.add('0' + samecyfry); // odwrotnie: UPC-A rozszerzony do EAN-13
+    }
+    if (samecyfry.length === 14 && samecyfry.startsWith('0')) {
+        warianty.add(samecyfry.slice(1)); // GTIN-14 z wiodącym zerem -> EAN-13
+        if (samecyfry.startsWith('00')) warianty.add(samecyfry.slice(2)); // ... -> UPC-A (12 cyfr)
+    }
+    if (samecyfry.length === 13 && !samecyfry.startsWith('0')) {
+        warianty.add('0' + samecyfry); // EAN-13 -> GTIN-14
     }
     return [...warianty].filter(w => w.length >= 8);
 }
@@ -3704,7 +3768,7 @@ async function pobierzOfertyZGoogleShopping(nazwaProduktu, waluta, krajOverride,
     // akcesoria które w tytule mają nazwę produktu głównego, ale to nie ten
     // produkt) - ZANIM w ogóle pokażemy je AI do wyboru. To główna przyczyna
     // błędnych dopasowań: AI dostawało takie pozycje bez żadnego kontekstu cen.
-    const wyciagnijLiczbe = (cena) => parseFloat(String(cena).replace(/[^\d.,]/g, '').replace(',', '.'));
+    const wyciagnijLiczbe = (cena) => parsujCene(cena);
 
     const liczby = oferty
         .map(o => wyciagnijLiczbe(o.cena))
@@ -3882,7 +3946,7 @@ async function wyszukajIZweryfikujOferteKonkurencji(produkt, jezyk, userId, req)
     }));
 
     const wybrana = oferty[wybor.numer - 1];
-    let cenaLiczba = parseFloat(String(wybrana.cena).replace(/[^\d.,]/g, '').replace(',', '.'));
+    let cenaLiczba = parsujCene(wybrana.cena);
     if (isNaN(cenaLiczba)) return { success: false, error: 'Nie udało się odczytać liczby z ceny wybranej oferty.' };
 
     // ŚCISŁA WERYFIKACJA WALUTY PRZEZ AI: druga, niezależna od regexów
@@ -3944,7 +4008,7 @@ async function wyszukajIZweryfikujOferteKonkurencji(produkt, jezyk, userId, req)
         const o = oferty[n - 1];
         const klucz = String(o.sklep || '').trim().toLowerCase();
         if (n !== wybor.numer && klucz && sklepyRynku.has(klucz)) continue;
-        let c = (n === wybor.numer) ? cenaLiczba : parseFloat(String(o.cena).replace(/[^\d.,]/g, '').replace(',', '.'));
+        let c = (n === wybor.numer) ? cenaLiczba : parsujCene(o.cena);
         if (isNaN(c) || c <= 0) continue;
         const cenaWlasna = parseFloat(produkt.twoja_cena);
         if (n !== wybor.numer && !isNaN(cenaWlasna) && (c < cenaWlasna * 0.25 || c > cenaWlasna * 4)) continue;
@@ -4295,6 +4359,11 @@ function obliczCeneRegulowa(produkt, tryb, wartosc, konfiguracja) {
         const procent = (typeof wartosc === 'number' && wartosc > 0) ? wartosc : 5;
         sugerowana = cenaKonkurencji * (1 - procent / 100);
         opis = `Reguła: ${procent}% poniżej ceny konkurencji (${cenaKonkurencji.toFixed(2)} ${produkt.waluta}).`;
+    } else if (tryb === 'KWOTA_PONIZEJ_KONKURENCJI') {
+        // Stała kwota w walucie produktu, np. $0.50 taniej niż najtańszy rywal.
+        const kwota = (typeof wartosc === 'number' && wartosc > 0) ? wartosc : 0.5;
+        sugerowana = Math.round((cenaKonkurencji - kwota) * 100) / 100;
+        opis = `Reguła: ${kwota.toFixed(2)} ${produkt.waluta} poniżej ceny konkurencji (${cenaKonkurencji.toFixed(2)} ${produkt.waluta}).`;
     } else if (tryb === 'DOPASUJ_KONKURENCJE') {
         sugerowana = cenaKonkurencji;
         opis = `Reguła: dopasowanie do ceny konkurencji (${cenaKonkurencji.toFixed(2)} ${produkt.waluta}).`;

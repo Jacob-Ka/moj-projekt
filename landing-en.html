@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PriceAI Cloud - Price Monitoring &amp; Repricing for Shopify and WooCommerce</title>
+    <meta name="description" content="See where your prices stand against Google Shopping and your direct competitors, and get price suggestions that never go below your minimum margin.">
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; margin: 0; color: #f8fafc; }
+        .nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 40px; border-bottom: 1px solid #334155; }
+        .logo { font-size: 20px; font-weight: 700; color: #818cf8; }
+        .nav-actions { display: flex; gap: 12px; }
+        button { padding: 11px 22px; border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #4f46e5; color: white; }
+        .btn-primary:hover { background: #4338ca; }
+        .btn-ghost { background: transparent; color: #cbd5e1; border: 1px solid #334155; }
+        .btn-ghost:hover { background: #1e293b; }
+
+        .hero { text-align: center; padding: 90px 20px 70px; max-width: 800px; margin: 0 auto; }
+        .hero h1 { font-size: 42px; margin-bottom: 18px; line-height: 1.2; }
+        .hero h1 span { color: #818cf8; }
+        .hero p { font-size: 17px; color: #94a3b8; line-height: 1.6; margin-bottom: 34px; }
+        .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+        .hero-actions button { padding: 14px 30px; font-size: 15px; }
+
+        /* Sekcja obsługiwanych platform - żeby było jasne PRZED rejestracją,
+           z jakim systemem sklepowym to zadziała. */
+        .platforms { max-width: 900px; margin: 0 auto 60px; padding: 0 20px; text-align: center; }
+        .platforms-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700; margin-bottom: 18px; }
+        .platforms-grid { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+        .platform-badge { display: flex; align-items: center; gap: 10px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px 22px; font-size: 14px; font-weight: 600; color: #e2e8f0; }
+        .platform-badge .icon { font-size: 20px; }
+        .platform-badge.universal { border-color: #4338ca; background: #1e1b4b; color: #a5b4fc; }
+
+        .market { max-width: 960px; margin: 0 auto 60px; padding: 0 20px; text-align: center; }
+        .market h2, .steps h2 { font-size: 26px; margin: 0 0 12px; }
+        .market-sub { color: #94a3b8; font-size: 15px; line-height: 1.6; max-width: 720px; margin: 0 auto 24px; }
+        .market-table-wrap { overflow-x: auto; border: 1px solid #334155; border-radius: 12px; background: #1e293b; }
+        .market-table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+        .market-table th, .market-table td { padding: 12px 14px; border-bottom: 1px solid #334155; white-space: nowrap; }
+        .market-table th { color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .market-table th:first-child, .market-table td:first-child { text-align: left; }
+        .market-table tr:last-child td { border-bottom: none; }
+        .market-table .bad { color: #f87171; font-weight: 700; }
+        .market-table .ok { color: #fbbf24; font-weight: 700; }
+        .market-table .good { color: #4ade80; font-weight: 700; }
+        .market-note { color: #64748b; font-size: 13px; margin-top: 12px; }
+        .pricing { max-width: 1000px; margin: 0 auto 60px; padding: 0 20px; text-align: center; }
+        .pricing h2 { font-size: 26px; margin: 0 0 12px; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 24px; text-align: left; }
+        .plan { position: relative; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 26px; display: flex; flex-direction: column; }
+        .plan-featured { border-color: #4f46e5; box-shadow: 0 0 0 1px #4f46e5; }
+        .plan-tag { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #4f46e5; color: #fff; font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px; white-space: nowrap; }
+        .plan h3 { margin: 0 0 8px; font-size: 18px; color: #a5b4fc; }
+        .plan-price { font-size: 32px; font-weight: 700; margin-bottom: 14px; }
+        .plan-price span { font-size: 13px; font-weight: 400; color: #94a3b8; }
+        .plan ul { list-style: none; padding: 0; margin: 0 0 20px; flex: 1; }
+        .plan li { font-size: 13px; color: #cbd5e1; padding: 6px 0 6px 22px; position: relative; }
+        .plan li::before { content: "✓"; position: absolute; left: 0; color: #4ade80; font-weight: 700; }
+        .plan button { width: 100%; }
+        .steps { max-width: 1000px; margin: 0 auto 50px; padding: 0 20px; text-align: center; }
+        .steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 24px; text-align: left; }
+        .step { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px; }
+        .step-num { display: inline-flex; width: 28px; height: 28px; border-radius: 50%; background: #4f46e5; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+        .step h3 { margin: 0 0 6px; font-size: 16px; }
+        .step p { margin: 0; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+
+        .features { max-width: 1100px; margin: 0 auto; padding: 40px 20px 100px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+        .feature-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 26px; }
+        .feature-card .icon { font-size: 28px; margin-bottom: 14px; }
+        .feature-card h3 { margin: 0 0 8px 0; font-size: 16px; color: #f8fafc; }
+        .feature-card p { margin: 0; font-size: 13px; color: #94a3b8; line-height: 1.5; }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+        .modal-card { background: #1e293b; border: 1px solid #334155; width: 400px; max-width: 92%; border-radius: 12px; padding: 30px; }
+        .modal-card h2 { margin-top: 0; text-align: center; color: #f8fafc; }
+        .modal-card input { width: 100%; padding: 12px 14px; margin-bottom: 14px; border: 2px solid #334155; border-radius: 8px; background: #0f172a; color: #fff; font-size: 14px; }
+        .modal-card input:focus { outline: none; border-color: #4f46e5; }
+        .modal-card button.btn-primary { width: 100%; padding: 13px; margin-top: 6px; }
+        .modal-error { color: #f87171; font-size: 13px; text-align: center; margin-bottom: 10px; min-height: 18px; }
+        .switch-link { text-align: center; margin-top: 16px; font-size: 13px; color: #94a3b8; }
+        .switch-link a { color: #818cf8; cursor: pointer; text-decoration: underline; }
+        .close-modal { position: absolute; top: 18px; right: 22px; background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; padding: 0; }
+            a { text-decoration: none; color: inherit; }
+        .plan a { margin-top: auto; display: block; }
+        .plan a button { width: 100%; }
+        html { scroll-behavior: smooth; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <div class="logo">PriceAI Cloud</div>
+        <div class="nav-actions">
+            <a href="landing.html?lang=en"><button class="btn-ghost">Log in</button></a>
+            <a href="landing.html?lang=en&signup=1"><button class="btn-primary">Start free</button></a>
+        </div>
+    </div>
+
+    <div class="hero">
+        <h1>Stop losing sales (and ad budget) to a competitor who is <span>$1 cheaper</span></h1>
+        <p>PriceAI Cloud watches your competitors' prices on Google Shopping and on the product pages you choose, then suggests the price that keeps you competitive without dropping below the minimum margin you set.</p>
+        <div class="hero-actions">
+            <a href="landing.html?lang=en&signup=1"><button class="btn-primary">Start free (10 products, no card)</button></a>
+            <a href="#how"><button class="btn-ghost">See how it works</button></a>
+        </div>
+    </div>
+
+    <div class="platforms">
+        <div class="platforms-label">Works with</div>
+        <div class="platforms-grid">
+            <div class="platform-badge"><span class="icon">🛍️</span> Shopify</div>
+            <div class="platform-badge"><span class="icon">🔌</span> WooCommerce</div>
+            <div class="platform-badge universal"><span class="icon">📄</span> Any other platform via CSV</div>
+        </div>
+    </div>
+
+    <div class="market">
+        <h2>Why a small price gap costs more than it looks</h2>
+        <p class="market-sub">If you pay for Google Shopping clicks, every shopper who clicks your ad and then buys from the shop that is $1-$2 cheaper is a click you paid for and lost. PriceAI Cloud shows you exactly which products that is happening to.</p>
+        <div class="market-table-wrap">
+            <table class="market-table">
+                <thead>
+                    <tr><th>Product (example)</th><th>Your price</th><th>Lowest</th><th>Median</th><th>Highest</th><th>Suggested</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>18V cordless drill (body only)</td><td class="bad">$139.00</td><td>$118.50</td><td>$126.99</td><td>$169.00</td><td class="good">$124.99</td></tr>
+                    <tr><td>Stainless water bottle 32 oz</td><td class="ok">$27.50</td><td>$24.99</td><td>$26.00</td><td>$34.95</td><td class="good">$25.49</td></tr>
+                    <tr><td>Wireless earbuds</td><td class="good">$59.00</td><td>$57.50</td><td>$62.00</td><td>$79.00</td><td class="good">$59.00</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="market-note">Illustrative example. Suggestions never go below the minimum price you set.</p>
+    </div>
+
+    <div class="steps" id="how">
+        <h2>How it works</h2>
+        <div class="steps-grid">
+            <div class="step"><span class="step-num">1</span><h3>Connect your store</h3><p>Connect Shopify or WooCommerce, or upload a CSV. Products are matched across shops by UPC / EAN / GTIN. Set a minimum price for every product.</p></div>
+            <div class="step"><span class="step-num">2</span><h3>We watch the market</h3><p>We check Google Shopping (US, UK, Germany and more) and the competitor product pages you add, and show the lowest, median and highest price.</p></div>
+            <div class="step"><span class="step-num">3</span><h3>You stay in control</h3><p>Get a suggested price with the reasoning. Approve it in one click, or let a rule apply it, for example "$0.50 below the cheapest competitor" or "1% below". Every change is logged.</p></div>
+        </div>
+    </div>
+
+    <div class="pricing">
+        <h2>Pricing</h2>
+        <p class="market-sub">Start with a free account (10 products, no card required). Upgrade when you are ready; billed monthly in USD.</p>
+        <div class="pricing-grid">
+            <div class="plan">
+                <h3>Growth</h3>
+                <div class="plan-price">$249 <span>/ month</span></div>
+                <ul><li>up to 1,000 products</li><li>daily price checks and suggestions</li><li>minimum price protection and change history</li></ul>
+                <a href="landing.html?lang=en&signup=1"><button class="btn-ghost">Start free</button></a>
+            </div>
+            <div class="plan plan-featured">
+                <div class="plan-tag">Most popular</div>
+                <h3>Scale</h3>
+                <div class="plan-price">$399 <span>/ month</span></div>
+                <ul><li>up to 5,000 products</li><li>daily price checks and suggestions</li><li>minimum price protection and change history</li></ul>
+                <a href="landing.html?lang=en&signup=1"><button class="btn-primary">Start free</button></a>
+            </div>
+        </div>
+        <p class="market-note">Larger catalog or custom needs? Email kontakt.priceaicloud@gmail.com</p>
+    </div>
+
+    <div class="features">
+        <div class="feature-card"><div class="icon">🛒</div><h3>Google Shopping tracking</h3><p>See how your price compares with the offers shoppers see in Google Shopping in your market.</p></div>
+        <div class="feature-card"><div class="icon">🔗</div><h3>Direct competitor monitoring</h3><p>Add the product pages of your main rivals and we watch their price for you.</p></div>
+        <div class="feature-card"><div class="icon">🛡️</div><h3>Margin protection</h3><p>Set a minimum price per product. Suggestions and automatic rules never go below it.</p></div>
+        <div class="feature-card"><div class="icon">🧾</div><h3>Full price history</h3><p>Every suggestion and every change is logged, so you always know what changed and why.</p></div>
+    </div>
+
+    <footer style="text-align:center; padding:30px 20px 50px; color:#64748b; font-size:12px; border-top:1px solid #334155; margin-top:20px;">
+        <div style="margin-bottom:12px;">Questions? Email <a href="mailto:kontakt.priceaicloud@gmail.com" style="color:#94a3b8;">kontakt.priceaicloud@gmail.com</a></div>
+        <a href="regulamin.html" style="color:#64748b; margin: 0 10px;">Terms (PL)</a>
+        <a href="polityka-prywatnosci.html" style="color:#64748b; margin: 0 10px;">Privacy Policy (PL)</a>
+    </footer>
+</body>
+</html>

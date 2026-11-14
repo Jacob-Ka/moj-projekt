@@ -335,11 +335,12 @@
                         <select id="trybCenowy" onchange="zmienTrybCenowy()" style="flex:1; min-width:220px;">
                             <option value="AI">🤖 AI (Claude analizuje każdy produkt)</option>
                             <option value="PROCENT_PONIZEJ_KONKURENCJI">📉 Reguła: % poniżej konkurencji</option>
+                            <option value="KWOTA_PONIZEJ_KONKURENCJI">💲 Reguła: stała kwota poniżej konkurencji (np. 0.50)</option>
                             <option value="DOPASUJ_KONKURENCJE">🎯 Reguła: dopasuj cenę konkurencji</option>
                         </select>
                         <div id="wartoscRegulyGrupa" style="display:none; align-items:center; gap:8px;">
-                            <input type="number" id="wartoscReguly" value="5" min="0" max="90" step="0.5" style="width:80px;">
-                            <span style="color:#94a3b8; font-size:13px;">%</span>
+                            <input type="number" id="wartoscReguly" value="5" min="0" max="90" step="0.01" style="width:80px;">
+                            <span id="wartoscRegulyJednostka" style="color:#94a3b8; font-size:13px;">%</span>
                         </div>
                     </div>
                 </div>

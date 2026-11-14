@@ -280,6 +280,15 @@
         // localStorage, żeby przetrwało nawet jeśli ktoś najpierw obejrzy
         // DEMO albo poklika po stronie, zanim faktycznie się zarejestruje,
         // a nie tylko gdyby rejestrował się w tej samej chwili.
+        // Linki z angielskiej strony (landing-en.html): ?lang=en ustawia język
+        // przed inicjalizacją tłumaczeń, a ?signup=1 od razu otwiera rejestrację.
+        (function obsluzParametryLinku() {
+            const p = new URLSearchParams(window.location.search);
+            const lang = (p.get('lang') || '').toLowerCase();
+            if (['pl', 'en', 'es', 'de', 'fr'].includes(lang)) localStorage.setItem('jezyk_priceai', lang);
+            if (p.get('signup') === '1') document.addEventListener('DOMContentLoaded', () => pokazModal('register'));
+        })();
+
         (function zapiszKodPolecajacy() {
             const parametry = new URLSearchParams(window.location.search);
             const ref = parametry.get('ref');

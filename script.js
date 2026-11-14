@@ -1596,19 +1596,76 @@ function eksportujCSV() {
 // surowego pliku na serwer) i wysyłamy gotową tablicę obiektów. Prosty
 // parser - nie obsługuje przecinków wewnątrz pól w cudzysłowie (rzadki
 // przypadek dla nazw produktów), wystarczający dla typowego eksportu z Excela.
+// Pełny parser CSV (RFC 4180): pola w cudzysłowach z przecinkami i nowymi liniami
+// ("Nike, Air Max", "$1,299.99"), podwojone cudzysłowy, BOM oraz automatyczne
+// rozpoznanie separatora (przecinek, średnik lub tabulator - eksporty z Excela
+// w PL i DE używają średnika). Wcześniej było tu zwykłe split(','), które
+// przesuwało kolumny w każdym pliku z przecinkiem w nazwie lub cenie.
+function parsujCSV(tekst) {
+    if (tekst.charCodeAt(0) === 0xFEFF) tekst = tekst.slice(1);
+    const pierwszaLinia = tekst.split(/\r?\n/, 1)[0] || '';
+    const licz = (znak) => (pierwszaLinia.match(new RegExp(znak === '\t' ? '\\t' : '\\' + znak, 'g')) || []).length;
+    const kandydaci = [',', ';', '\t'];
+    const sep = kandydaci.reduce((a, b) => licz(b) > licz(a) ? b : a, ',');
+
+    const wiersze = [];
+    let pole = '', wiersz = [], wCudzyslowie = false;
+    for (let i = 0; i < tekst.length; i++) {
+        const c = tekst[i];
+        if (wCudzyslowie) {
+            if (c === '"') {
+                if (tekst[i + 1] === '"') { pole += '"'; i++; } else { wCudzyslowie = false; }
+            } else { pole += c; }
+        } else if (c === '"') {
+            wCudzyslowie = true;
+        } else if (c === sep) {
+            wiersz.push(pole); pole = '';
+        } else if (c === '\n' || c === '\r') {
+            if (c === '\r' && tekst[i + 1] === '\n') i++;
+            wiersz.push(pole); pole = '';
+            if (wiersz.some(v => v.trim() !== '')) wiersze.push(wiersz);
+            wiersz = [];
+        } else { pole += c; }
+    }
+    wiersz.push(pole);
+    if (wiersz.some(v => v.trim() !== '')) wiersze.push(wiersz);
+    return wiersze;
+}
+
+// Nazwy kolumn używane w eksportach Shopify/WooCommerce/Google Merchant (EN)
+// oraz własne polskie - mapowane na pola, których oczekuje serwer.
+const ALIASY_KOLUMN_CSV = {
+    nazwa: ['nazwa', 'name', 'title', 'product name', 'product title', 'product'],
+    ean: ['ean', 'gtin', 'upc', 'barcode', 'variant barcode', 'isbn'],
+    mpn: ['mpn', 'sku', 'variant sku', 'manufacturer part number'],
+    twoja_cena: ['twoja_cena', 'cena', 'price', 'your price', 'regular price', 'variant price'],
+    cena_konkurencji: ['cena_konkurencji', 'competitor price', 'competitor_price'],
+    url_konkurencja: ['url_konkurencja', 'competitor url', 'competitor_url', 'competitor link'],
+    waluta: ['waluta', 'currency', 'price currency']
+};
+
 async function importujCSV(inputEl) {
     const plik = inputEl.files?.[0];
     if (!plik) return;
 
     const tekst = await plik.text();
-    const linie = tekst.split(/\r?\n/).filter(l => l.trim());
-    if (linie.length < 2) { pokazToast('Plik CSV jest pusty albo zawiera tylko nagłówek.', 'error'); inputEl.value = ''; return; }
+    const tabela = parsujCSV(tekst);
+    if (tabela.length < 2) { pokazToast('Plik CSV jest pusty albo zawiera tylko nagłówek.', 'error'); inputEl.value = ''; return; }
 
-    const naglowki = linie[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
-    const produkty = linie.slice(1).map(linia => {
-        const wartosci = linia.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    const naglowki = tabela[0].map(h => h.trim().toLowerCase());
+    const indeksy = {};
+    for (const [pole, aliasy] of Object.entries(ALIASY_KOLUMN_CSV)) {
+        const idx = naglowki.findIndex(h => aliasy.includes(h));
+        if (idx !== -1) indeksy[pole] = idx;
+    }
+    if (indeksy.nazwa === undefined || indeksy.twoja_cena === undefined) {
+        pokazToast('Brak wymaganych kolumn w pliku CSV: nazwa (name/title) i cena (price/twoja_cena).', 'error');
+        inputEl.value = '';
+        return;
+    }
+    const produkty = tabela.slice(1).map(wartosci => {
         const wiersz = {};
-        naglowki.forEach((h, i) => { wiersz[h] = wartosci[i]; });
+        for (const [pole, idx] of Object.entries(indeksy)) wiersz[pole] = (wartosci[idx] || '').trim();
         return wiersz;
     });
 
@@ -1919,13 +1976,24 @@ function usunPozycjeMagazynu(id) {
 function pokazUkryjWartoscReguly() {
     const tryb = document.getElementById('trybCenowy')?.value;
     const grupa = document.getElementById('wartoscRegulyGrupa');
-    if (grupa) grupa.style.display = (tryb === 'PROCENT_PONIZEJ_KONKURENCJI') ? 'flex' : 'none';
+    if (grupa) grupa.style.display = (tryb === 'PROCENT_PONIZEJ_KONKURENCJI' || tryb === 'KWOTA_PONIZEJ_KONKURENCJI') ? 'flex' : 'none';
+    const jedn = document.getElementById('wartoscRegulyJednostka');
+    if (jedn) jedn.innerText = (tryb === 'KWOTA_PONIZEJ_KONKURENCJI') ? 'kwota (waluta sklepu)' : '%';
+    const poleWartosci = document.getElementById('wartoscReguly');
+    if (poleWartosci) poleWartosci.max = (tryb === 'KWOTA_PONIZEJ_KONKURENCJI') ? '100000' : '90';
 }
 
 async function zmienTrybCenowy() {
     pokazUkryjWartoscReguly();
     const tryb = document.getElementById('trybCenowy')?.value;
-    const wartosc = parseFloat(document.getElementById('wartoscReguly')?.value) || 5;
+    let wartosc = parseFloat(document.getElementById('wartoscReguly')?.value) || 5;
+    // Przy przejściu na stałą kwotę domyślne "5" (z trybu %) oznaczałoby 5 jednostek waluty
+    // taniej - bezpieczniejszy start to 0.50; klient i tak może to zmienić.
+    if (tryb === 'KWOTA_PONIZEJ_KONKURENCJI' && wartosc === 5) {
+        wartosc = 0.5;
+        const pole = document.getElementById('wartoscReguly');
+        if (pole) pole.value = '0.5';
+    }
 
     const data = await apiFetch('/tryb-cenowy', {
         method: 'PUT',
@@ -1934,7 +2002,7 @@ async function zmienTrybCenowy() {
     });
 
     if (data?.success) {
-        const opis = tryb === 'AI' ? 'AI (analiza modelem językowym)' : tryb === 'DOPASUJ_KONKURENCJE' ? 'dopasowanie do ceny konkurencji' : `${wartosc}% poniżej konkurencji`;
+        const opis = tryb === 'AI' ? 'AI (analiza modelem językowym)' : tryb === 'DOPASUJ_KONKURENCJE' ? 'dopasowanie do ceny konkurencji' : tryb === 'KWOTA_PONIZEJ_KONKURENCJI' ? `${wartosc} poniżej konkurencji (stała kwota)` : `${wartosc}% poniżej konkurencji`;
         pokazToast(`Tryb wyliczania cen ustawiony na: ${opis}.`, 'success');
     } else {
         pokazToast(data?.error || 'Błąd zapisu trybu cenowego.', 'error');
