@@ -870,6 +870,7 @@ db.run(`ALTER TABLE historia_cen_konkurencji ADD COLUMN wszystkie_kandydaci_json
     ['konfiguracja', 'alert_wzrost INTEGER DEFAULT 0'],
     ['globalne_produkty', 'dostepnosc_konkurencji TEXT'],
     ['globalne_produkty', 'monitoring_sprawdzono TEXT'],
+    ['globalne_produkty', 'ostatnia_auto_zmiana_ceny TEXT'],
     ['users', 'api_key_hash TEXT'],
     ['users', 'api_key_podglad TEXT']
 ].forEach(([tabela, definicja]) => {
@@ -5737,11 +5738,56 @@ async function przetwarzajKolejkeHarmonogramow() {
 }
 
 // ============== MONITORING 24/7 ==============
-// Poza codziennym harmonogramem (przeliczanie cen) co kilka godzin sprawdzamy SAMĄ
-// cenę i dostępność u konkurentów i od razu wysyłamy alerty. Tylko szybka metoda
+// Co kilka godzin sprawdzamy cenę i dostępność u konkurentów, wysyłamy alerty
+// i (przy włączonej automatyzacji) od razu przeliczamy i zmieniamy cenę klienta. Tylko szybka metoda
 // (zwykłe zapytanie HTTP) - bez przeglądarki, Zyte i tokenów AI.
 const MONITORING_CO_GODZIN = Math.max(0.5, parseFloat(process.env.MONITORING_CO_GODZIN || '4'));
 const MONITORING_PARTIA = Math.max(1, parseInt(process.env.MONITORING_PARTIA || '60', 10));
+// Po wykryciu zmiany ceny konkurenta monitoring od razu przelicza i stosuje cenę
+// klienta (reguła albo AI) - to zastępuje dawny codzienny harmonogram.
+// Zabezpieczenia: tylko produkty z auto_pricing=1 u użytkowników z włączoną
+// automatyzacją, maks. 1 automatyczna zmiana ceny produktu na 24 h, a cena
+// na/poniżej Floor Price kończy się powiadomieniem.
+const AUTO_ZMIANA_MIN_GODZIN = 24;
+async function zastosujAutoCeneProduktu(produktId) {
+    const p = await dbGetAsync(`SELECT * FROM globalne_produkty WHERE id = ?`, [produktId]);
+    if (!p || !p.auto_pricing || !p.cena_konkurencji) return null;
+    const userId = p.user_id;
+    const konf = await dbGetAsync(`SELECT tryb_cenowy, wartosc_reguly, ceny_zawieraja_vat, stawka_vat, floor_price_procent, daily_auto_sync FROM konfiguracja WHERE user_id = ?`, [userId]);
+    if (!konf || !konf.daily_auto_sync) return null;
+    if (p.ostatnia_auto_zmiana_ceny && (Date.now() - new Date(p.ostatnia_auto_zmiana_ceny).getTime()) < AUTO_ZMIANA_MIN_GODZIN * 3600 * 1000) return null;
+
+    let nowaCena, uzasadnienie, zrodlo;
+    if ((konf.tryb_cenowy || 'AI') !== 'AI') {
+        const w = obliczCeneRegulowa(produktZDostosowanaCenaKonkurencji(p, konf), konf.tryb_cenowy, konf.wartosc_reguly, konf);
+        if (!w) return null;
+        nowaCena = w.sugerowana_cena; uzasadnienie = w.uzasadnienie; zrodlo = 'Monitoring automatyczny (reguła)';
+    } else {
+        if (!ANTHROPIC_API_KEY) return null;
+        const lim = await dbGetAsync(`SELECT tokeny_ai FROM limity_uzytkownika WHERE user_id = ?`, [userId]);
+        if (!lim || lim.tokeny_ai <= 0) return null;
+        const wyniki = await poprosAIOSugestieWsadowo([produktZDostosowanaCenaKonkurencji(p, konf)], 'pl');
+        const w = (wyniki || []).find(x => x.id === p.id);
+        if (!w || typeof w.sugerowana_cena !== 'number') return null;
+        await dbRunAsync(`UPDATE limity_uzytkownika SET tokeny_ai = tokeny_ai - 1 WHERE user_id = ?`, [userId]);
+        nowaCena = w.sugerowana_cena; uzasadnienie = w.uzasadnienie; zrodlo = 'Monitoring automatyczny (AI)';
+    }
+    const cenaStr = Number(nowaCena).toFixed(2);
+    const teraz = new Date().toISOString();
+    const zmiana = cenaStr !== parseFloat(p.twoja_cena).toFixed(2);
+    if (!zmiana) {
+        await dbRunAsync(`UPDATE globalne_produkty SET sugerowana_cena = ?, rekomendacja = ?, ai_sprawdzona_cena_konkurencji = ?, ai_ostatnio_sprawdzono = ? WHERE id = ?`, [cenaStr, uzasadnienie, p.cena_konkurencji, teraz, p.id]);
+    } else {
+        await dbRunAsync(`UPDATE globalne_produkty SET sugerowana_cena = ?, rekomendacja = ?, ai_sprawdzona_cena_konkurencji = ?, ai_ostatnio_sprawdzono = ?, twoja_cena = ?, ostatnia_auto_zmiana_ceny = ? WHERE id = ?`, [cenaStr, uzasadnienie, p.cena_konkurencji, teraz, cenaStr, teraz, p.id]);
+        await dbRunAsync(`INSERT INTO historia_zmian_cen (user_id, produkt_id, stara_cena, nowa_cena, zrodlo, data) VALUES (?, ?, ?, ?, ?, ?)`, [userId, p.id, p.twoja_cena, cenaStr, zrodlo, new Date().toLocaleString('pl-PL')]);
+        await wyslijCeneJesliPolaczony(userId, p, cenaStr);
+    }
+    if (Number(nowaCena) <= obliczFloorPrice(p, konf)) {
+        await dodajPowiadomienieZDeduplikacja(userId, 'floor_price', `Automatyczna zmiana ceny: „${p.nazwa}” ma nową cenę na poziomie Floor Price lub poniżej - sprawdź w panelu.`, null);
+    }
+    return zmiana ? cenaStr : null;
+}
+
 let monitoringTrwa = false;
 async function monitorujCenyKonkurencji() {
     if (monitoringTrwa) return;
@@ -5760,7 +5806,11 @@ async function monitorujCenyKonkurencji() {
             try {
                 const cena = await pobierzCeneZeStrony(p.url_konkurencja, null, null, { tylkoDarmowe: true });
                 const zmiana = await zarejestrujOdczytCenyKonkurencji(p.user_id, p, cena, 'Monitoring automatyczny', { tylkoGdyZmiana: true });
-                if (zmiana) await dbRunAsync(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cena.toFixed(2), p.id]);
+                if (zmiana) {
+                    await dbRunAsync(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cena.toFixed(2), p.id]);
+                    try { await zastosujAutoCeneProduktu(p.id); }
+                    catch (e2) { console.log(`⚠️  Auto-zmiana ceny produktu ${p.id}: ${e2.message}`); }
+                }
             } catch (e) { /* strona chwilowo niedostępna - spróbujemy w następnym cyklu */ }
             await new Promise(r => setTimeout(r, 1500)); // grzecznie wobec serwerów konkurencji
         }
@@ -5773,7 +5823,8 @@ async function monitorujCenyKonkurencji() {
 setInterval(monitorujCenyKonkurencji, 10 * 60 * 1000);
 setTimeout(monitorujCenyKonkurencji, 90 * 1000);
 
-setInterval(sprawdzHarmonogramy, 60 * 1000);
+// Dawny codzienny harmonogram wyłączony - zmiany cen robi monitoring co kilka godzin.
+// setInterval(sprawdzHarmonogramy, 60 * 1000);
 setInterval(przetwarzajKolejkeHarmonogramow, 10 * 1000);
 
 // Ostatnia linia obrony - jeśli którykolwiek endpoint rzuci błąd, którego nie

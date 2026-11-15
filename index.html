@@ -277,21 +277,8 @@
                 </div>
 
                 <div class="inputs-grid" style="margin-top: 15px;">
-                    <div class="input-group">
-                        <label class="label-with-tip" style="font-size: 13px; font-weight: 600; color: #f8fafc; margin-bottom: 6px;">
-                            <span data-i18n="schedule_label"></span>
-                            <span class="tooltip-icon" data-i18n="co_to_znaczy" data-i18n-tip="schedule_tip"></span>
-                        </label>
-                        <input type="time" id="autoRepriceTime" value="06:00">
-                        <div class="time-presets">
-                            <button type="button" class="time-preset-btn" data-i18n="preset_morning" onclick="ustawGodzine('06:00', this)"></button>
-                            <button type="button" class="time-preset-btn" data-i18n="preset_noon" onclick="ustawGodzine('12:00', this)"></button>
-                            <button type="button" class="time-preset-btn" data-i18n="preset_afternoon" onclick="ustawGodzine('18:00', this)"></button>
-                            <button type="button" class="time-preset-btn" data-i18n="preset_evening" onclick="ustawGodzine('22:00', this)"></button>
-                        </div>
-                        <span class="help-text" data-i18n="schedule_help"></span>
-                    </div>
-                    <div class="input-group" style="justify-content: flex-end;">
+                    <input type="hidden" id="autoRepriceTime" value="06:00">
+                    <div class="input-group" style="grid-column: 1 / -1;">
                         <div class="global-toggle-row" style="margin-bottom: 0; height: 100%;">
                             <div>
                                 <div class="global-toggle-info label-with-tip">
