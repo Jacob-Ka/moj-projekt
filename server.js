@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
 const { middlewareJezyka, tlumaczKomunikat, jezykZZadania } = require('./komunikaty');
+const analityka = require('./analityka');
 
 // ============== ALERTY NA DISCORDA (awarie serwera) ==============
 // Bez ZMIENNEJ DISCORD_WEBHOOK_URL ta funkcja jest cichym no-op - reszta
@@ -216,7 +217,9 @@ app.use(cors({ origin: true, credentials: true }));
 // własny, "surowy" parser bezpośrednio przy definicji trasy niżej.
 app.use((req, res, next) => {
     if (req.originalUrl === '/api/stripe/webhook') return next();
-    express.json()(req, res, next);
+    // Feed XML (Google Merchant) bywa duży - tylko ta ścieżka dostaje wyższy limit treści.
+    const limit = req.originalUrl === '/api/produkty/import-feed' ? '10mb' : undefined;
+    express.json(limit ? { limit } : undefined)(req, res, next);
 });
 // Serwuje pliki front-endu (index.html, script.js, landing.html, i18n.js
 // itd.) bezpośrednio z tego samego serwera - jeden proces, jeden adres,
@@ -226,6 +229,13 @@ app.use((req, res, next) => {
 // sztywno wpisanego adresu - lokalnie i po wdrożeniu działa identycznie, bez
 // zmiany kodu.
 // Tłumaczy komunikaty błędów/odpowiedzi API na język wybrany w aplikacji (ciasteczko jezyk_priceai).
+// Endpoint do monitoringu 24/7 (UptimeRobot, Railway healthcheck): 200 gdy serwer i baza odpowiadają.
+app.get('/health', (req, res) => {
+    db.get('SELECT 1 AS ok', [], (err) => {
+        if (err) return res.status(503).json({ ok: false });
+        res.json({ ok: true, czas: new Date().toISOString() });
+    });
+});
 app.use('/api', middlewareJezyka);
 app.use(express.static(__dirname));
 app.use(session({
@@ -851,6 +861,22 @@ db.run(`
 db.run(`ALTER TABLE historia_cen_konkurencji ADD COLUMN wszystkie_kandydaci_json TEXT`, (err) => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Migracja wszystkie_kandydaci_json:', err.message);
 });
+// Alerty (e-mail / webhook), dostępność u konkurenta i klucz API.
+[
+    ['konfiguracja', 'alert_email INTEGER DEFAULT 0'],
+    ['konfiguracja', 'alert_webhook_url TEXT'],
+    ['konfiguracja', 'alert_spadek_pct REAL DEFAULT 5'],
+    ['konfiguracja', 'alert_dostepnosc INTEGER DEFAULT 1'],
+    ['konfiguracja', 'alert_wzrost INTEGER DEFAULT 0'],
+    ['globalne_produkty', 'dostepnosc_konkurencji TEXT'],
+    ['globalne_produkty', 'monitoring_sprawdzono TEXT'],
+    ['users', 'api_key_hash TEXT'],
+    ['users', 'api_key_podglad TEXT']
+].forEach(([tabela, definicja]) => {
+    db.run(`ALTER TABLE ${tabela} ADD COLUMN ${definicja}`, (err) => {
+        if (err && !/duplicate column/i.test(err.message)) console.error(`Migracja ${tabela}.${definicja}:`, err.message);
+    });
+});
 // platforma: który system e-commerce klient podłączył - 'woocommerce' (jak
 // dotychczas), 'shopify' (druga obsługiwana platforma), albo 'csv' (dowolny
 // inny system - klient ręcznie importuje/eksportuje CSV, bez automatycznej
@@ -986,6 +1012,94 @@ async function dodajPowiadomienieZDeduplikacja(userId, typ, tresc, produktId) {
         }
         await dodajPowiadomienie(userId, typ, tresc, produktId);
     } catch (e) { /* nieblokujące */ }
+}
+
+// ============== ALERTY (powiadomienie w aplikacji + e-mail + webhook) ==============
+async function wyslijWebhook(url, typ, tresc, produkt) {
+    if (!analityka.czyAdresWebhookaDozwolony(url)) return false;
+    try {
+        const host = new URL(url).hostname;
+        const dns = require('dns').promises;
+        const adresy = await dns.lookup(host, { all: true });
+        // Ochrona przed SSRF: nazwa publiczna, ale wskazująca na adres wewnętrzny.
+        if (adresy.some(a => /^(127\.|10\.|0\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a.address) || a.address === '::1' || /^f[cd]/i.test(a.address) || /^fe80/i.test(a.address))) return false;
+    } catch (e) { return false; }
+    const kontroler = new AbortController();
+    const limit = setTimeout(() => kontroler.abort(), 8000);
+    try {
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // "text" - Slack i Discord ("content") akceptują prosty tekst; pozostałe pola dla własnych integracji.
+            body: JSON.stringify({ text: `PriceAI Cloud: ${tresc}`, content: `PriceAI Cloud: ${tresc}`, typ, tresc, produkt: produkt ? { id: produkt.id, nazwa: produkt.nazwa } : null, data: new Date().toISOString() }),
+            signal: kontroler.signal,
+            redirect: 'error'
+        });
+        return r.ok;
+    } catch (e) { return false; } finally { clearTimeout(limit); }
+}
+
+async function wyslijAlerty(userId, produkt, alerty) {
+    if (!alerty || alerty.length === 0 || String(userId).startsWith('guest_')) return;
+    let ustawienia = {};
+    let email = null;
+    try {
+        ustawienia = (await dbGetAsync(`SELECT alert_email, alert_webhook_url FROM konfiguracja WHERE user_id = ?`, [userId])) || {};
+        const u = await dbGetAsync(`SELECT email FROM users WHERE id = ?`, [userId]);
+        email = u ? u.email : null;
+    } catch (e) { /* alert to funkcja pomocnicza */ }
+    for (const a of alerty) {
+        await dodajPowiadomienie(userId, a.typ, a.tresc, produkt ? produkt.id : null);
+        if (ustawienia.alert_email === 1 && email) {
+            const html = `<p>${analityka.ekranujXml(a.tresc)}</p><p style="color:#64748b;font-size:12px;">PriceAI Cloud - alerty możesz wyłączyć w panelu (🔔 Alerty).</p>`;
+            wyslijEmail(email, `PriceAI Cloud: ${a.typ === 'brak_towaru' ? 'konkurent bez towaru' : a.typ === 'spadek_ceny' ? 'spadek ceny u konkurenta' : 'alert cenowy'}`, html).catch(() => {});
+        }
+        if (ustawienia.alert_webhook_url) {
+            wyslijWebhook(ustawienia.alert_webhook_url, a.typ, a.tresc, produkt).catch(() => {});
+        }
+    }
+}
+
+// Zapisuje nowy odczyt ceny konkurenta do historii (wykres trendu) i wywołuje
+// alerty, jeśli cena/dostępność zmieniły się istotnie względem poprzedniego odczytu.
+async function zarejestrujOdczytCenyKonkurencji(userId, produkt, nowaCena, zrodlo, opcje = {}) {
+    const cenaStr = Number(nowaCena).toFixed(2);
+    const dostepnosc = odczytajDostepnosc(produkt.url_konkurencja);
+    // Monitoring w tle zapisuje punkt historii tylko, gdy coś się zmieniło
+    // (cena lub dostępność) - inaczej baza puchłaby co kilka godzin.
+    if (opcje.tylkoGdyZmiana) {
+        const poprz = parseFloat(produkt.cena_konkurencji);
+        const cenaZmieniona = isNaN(poprz) || poprz.toFixed(2) !== cenaStr;
+        const dostepnoscZmieniona = dostepnosc !== 'nieznana' && dostepnosc !== produkt.dostepnosc_konkurencji;
+        if (!cenaZmieniona && !dostepnoscZmieniona) return false;
+    }
+    try {
+        await dbRunAsync(
+            `INSERT INTO historia_cen_konkurencji (user_id, produkt_id, cena, sklep, link, zrodlo, zweryfikowano, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, produkt.id, cenaStr, '', produkt.url_konkurencja || '', zrodlo, 1, new Date().toLocaleString('pl-PL')]
+        );
+        const k = (await dbGetAsync(`SELECT alert_spadek_pct, alert_dostepnosc, alert_wzrost, floor_price_procent FROM konfiguracja WHERE user_id = ?`, [userId])) || {};
+        const procentFloor = produkt.floor_price_procent || k.floor_price_procent || 75;
+        const floor = parseFloat(produkt.twoja_cena) * procentFloor / 100;
+        const alerty = analityka.wykryjAlerty({
+            nazwa: produkt.nazwa,
+            poprzedniaCena: produkt.cena_konkurencji,
+            nowaCena: cenaStr,
+            dostepnoscPoprzednia: produkt.dostepnosc_konkurencji,
+            dostepnoscNowa: dostepnosc,
+            twojaCena: produkt.twoja_cena,
+            floorPrice: floor,
+            ustawienia: k
+        });
+        if (dostepnosc !== 'nieznana') {
+            await dbRunAsync(`UPDATE globalne_produkty SET dostepnosc_konkurencji = ? WHERE id = ?`, [dostepnosc, produkt.id]);
+        }
+        await wyslijAlerty(userId, produkt, alerty);
+        return true;
+    } catch (e) {
+        console.log(`⚠️  Nie udało się zapisać historii/alertów dla produktu ${produkt.id}: ${e.message}`);
+        return false;
+    }
 }
 
 app.get('/api/powiadomienia', wymagajSesji, (req, res) => {
@@ -2761,12 +2875,9 @@ app.post('/api/ceny/reset-bazowe', wymagajSesji, async (req, res) => {
 // bezpieczniej niż parsowanie nieznanego formatu pliku po stronie serwera.
 // Oczekiwane kolumny (nagłówki, wielkość liter bez znaczenia): nazwa, ean,
 // twoja_cena, cena_konkurencji (opcjonalnie), url_konkurencja (opcjonalnie).
-app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
-    const userId = req.session.userId;
-    const wiersze = Array.isArray(req.body.produkty) ? req.body.produkty : [];
-    if (wiersze.length === 0) return res.status(400).json({ success: false, error: 'Plik CSV nie zawiera żadnych poprawnych wierszy.' });
-
-    try {
+// Wspólna logika importu (CSV i feed XML): zwraca { zaimportowano, zaktualizowano, pominieto }.
+async function wykonajImportProduktow(userId, wiersze) {
+    {
         const limity = await dbGetAsync(`SELECT limit_produktow FROM limity_uzytkownika WHERE user_id = ?`, [userId]);
         const limitProduktow = limity ? limity.limit_produktow : DOMYSLNY_LIMIT_PRODUKTOW;
 
@@ -2832,11 +2943,34 @@ app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
             miejsceDostepne--;
         }
 
-        res.json({ success: true, zaimportowano, zaktualizowano, pominieto });
+        return { zaimportowano, zaktualizowano, pominieto };
+    }
+}
+
+app.post('/api/produkty/import-csv', wymagajSesji, async (req, res) => {
+    const wiersze = Array.isArray(req.body.produkty) ? req.body.produkty : [];
+    if (wiersze.length === 0) return res.status(400).json({ success: false, error: 'Plik CSV nie zawiera żadnych poprawnych wierszy.' });
+    try {
+        res.json({ success: true, ...(await wykonajImportProduktow(req.session.userId, wiersze)) });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
+
+// Import feedu produktowego XML (Google Merchant Center: RSS 2.0 / Atom). Treść XML
+// przychodzi z przeglądarki (plik wybrany przez użytkownika) - serwer niczego nie pobiera z sieci.
+app.post('/api/produkty/import-feed', wymagajSesji, async (req, res) => {
+    const xml = typeof req.body.xml === 'string' ? req.body.xml : '';
+    if (xml.length < 20 || xml.length > 8 * 1024 * 1024) return res.status(400).json({ success: false, error: 'Nie znaleziono produktów w pliku XML (maks. 8 MB).' });
+    const wiersze = analityka.parsujFeedXml(xml).slice(0, 5000).map(p => ({ nazwa: p.nazwa, twoja_cena: p.twoja_cena, waluta: p.waluta, ean: p.ean, url_konkurencja: '', cena_konkurencji: '' }));
+    if (wiersze.length === 0) return res.status(400).json({ success: false, error: 'Nie znaleziono produktów w pliku XML (maks. 8 MB).' });
+    try {
+        res.json({ success: true, ...(await wykonajImportProduktow(req.session.userId, wiersze)) });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 
 app.post('/api/produkty', wymagajSesji, (req, res) => {
     const { nazwa, ean, waluta, twoja_cena, cena_konkurencji, url_konkurencja, kraj } = req.body;
@@ -3065,7 +3199,7 @@ async function pobierzTekstZLimitem(res) {
 // przycisku "Pobierz cenę", jak i przy codziennym odświeżaniu w harmonogramie
 // - Krok B jest teraz dostępny w OBU tych miejscach, nie tylko przy
 // automatycznym wyszukiwaniu nowej oferty.
-async function pobierzCeneZeStrony(url, targetCountry, targetCurrency) {
+async function pobierzCeneZeStrony(url, targetCountry, targetCurrency, opcje = {}) {
     if (!czyUrlBezpieczny(url)) {
         throw new Error('Ten adres URL jest niedozwolony (adres wewnętrzny/lokalny albo nieobsługiwany protokół).');
     }
@@ -3083,6 +3217,12 @@ async function pobierzCeneZeStrony(url, targetCountry, targetCurrency) {
         ostatniTekst = wynik.tekst;
     } catch (e) {
         bladPolaczenia = e; // prawdziwy błąd połączenia - próbujemy dalej metodą 2, zanim się poddamy
+    }
+
+    // Monitoring w tle (opcje.tylkoDarmowe) używa WYŁĄCZNIE szybkiej metody 1:
+    // bez przeglądarki (pamięć), bez płatnego Zyte i bez tokenów AI.
+    if (opcje.tylkoDarmowe) {
+        throw new Error(bladPolaczenia ? bladPolaczenia.message : 'Nie udało się automatycznie odczytać ceny z tej strony.');
     }
 
     // Metoda 2 (zapasowa, wolniejsza): prawdziwa przeglądarka w tle
@@ -3138,6 +3278,23 @@ async function pobierzCeneZeStrony(url, targetCountry, targetCurrency) {
 // do ewentualnego Kroku B (awaryjny parser AI). Nadal RZUCA błąd przy
 // prawdziwych problemach z połączeniem (strona nie odpowiada, zła sieć) -
 // to co innego niż "strona odpowiedziała, ale nie znaleźliśmy w niej ceny".
+// Dostępność oferty konkurenta zapamiętywana "z boku" przy pobieraniu strony
+// (pobierzCeneZeStrony zwraca tylko liczbę), żeby alerty "konkurent nie ma
+// towaru" nie wymagały zmiany sygnatur wielu funkcji.
+const ostatniaDostepnosc = new Map(); // url -> { wartosc, czas }
+function zapamietajDostepnosc(url, tekst) {
+    try {
+        if (ostatniaDostepnosc.size > 2000) ostatniaDostepnosc.clear();
+        const t = String(tekst || '');
+        if (t.trim().startsWith('{') || t.trim().startsWith('[')) return;
+        ostatniaDostepnosc.set(url, { wartosc: wyciagnijDostepnosc(t), czas: Date.now() });
+    } catch (e) { /* nieblokujące */ }
+}
+function odczytajDostepnosc(url) {
+    const w = ostatniaDostepnosc.get(url);
+    return w && Date.now() - w.czas < 5 * 60 * 1000 ? w.wartosc : 'nieznana';
+}
+
 async function pobierzCeneSzybko(url) {
     let res;
     const kontroler = new AbortController();
@@ -3159,6 +3316,7 @@ async function pobierzCeneSzybko(url) {
     if (!res.ok) throw new Error(`Strona konkurencji zwróciła błąd (status ${res.status}).`);
 
     const tekst = await pobierzTekstZLimitem(res);
+    zapamietajDostepnosc(url, tekst);
 
     // Jeśli podany link to adres wewnętrznego API sklepu (zwraca czysty JSON,
     // np. znaleziony ręcznie przez zakładkę Network w przeglądarce), szukaj
@@ -3615,7 +3773,7 @@ async function pobierzOfertyZGoogleShopping(nazwaProduktu, waluta, krajOverride,
     // Jeśli produkt ma jawnie ustawiony kraj, użyj go zamiast zgadywać z
     // samej waluty (to dokładnie rozwiązuje niejednoznaczność strefy euro -
     // Francuz i Niemiec obaj mają EUR, ale to różne kraje wyszukiwania).
-    const kodKraju = (krajOverride && krajOverride.trim()) ? krajOverride.trim().toLowerCase() : krajDlaWaluty(waluta);
+    const kodKraju = ((krajOverride && krajOverride.trim()) ? krajOverride.trim().toLowerCase() : krajDlaWaluty(waluta)).replace(/^uk$/, 'gb');
 
     // Język wyników wyszukiwania (parametr hl) - osobny od kraju (gl), bo
     // wyszukiwarki traktują je jako dwa niezależne parametry. Bez tego np.
@@ -4249,7 +4407,7 @@ app.post('/api/produkty/:id/potwierdz-konkurencje', wymagajSesji, async (req, re
 
 app.put('/api/produkty/:id/kraj', wymagajSesji, (req, res) => {
     const { kraj } = req.body;
-    db.run(`UPDATE globalne_produkty SET kraj = ? WHERE id = ? AND user_id = ?`, [kraj || '', req.params.id, req.session.userId], (err) => {
+    db.run(`UPDATE globalne_produkty SET kraj = ? WHERE id = ? AND user_id = ?`, [String(kraj || '').trim().toLowerCase().replace(/^uk$/, 'gb'), req.params.id, req.session.userId], (err) => {
         if (err) return res.status(500).json({ success: false, error: 'Błąd zapisu kraju.' });
         res.json({ success: true });
     });
@@ -4287,11 +4445,8 @@ app.post('/api/produkty/:id/pobierz-cene-konkurencji', wymagajSesji, async (req,
 
         const cena = await pobierzCeneZeStrony(produkt.url_konkurencja, targetCountry, targetCurrency);
         const cenaStr = cena.toFixed(2);
-        db.run(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cenaStr, id]);
-        await dbRunAsync(
-            `INSERT INTO historia_cen_konkurencji (user_id, produkt_id, cena, sklep, link, zrodlo, zweryfikowano, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, id, cenaStr, '', produkt.url_konkurencja, 'Ręczne pobranie z linku', 1, new Date().toLocaleString('pl-PL')]
-        );
+        await zarejestrujOdczytCenyKonkurencji(userId, produkt, cena, 'Ręczne pobranie z linku');
+        await dbRunAsync(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cenaStr, id]);
         res.json({ success: true, cena_konkurencji: cenaStr });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -4304,6 +4459,175 @@ app.get('/api/historia-cen-konkurencji/:id', wymagajSesji, (req, res) => {
         [req.params.id, req.session.userId],
         (err, rows) => res.json(rows || [])
     );
+});
+
+// ============== WYKRES TRENDU (30 / 90 / 365 dni) ==============
+app.get('/api/historia-wykres/:id', wymagajSesji, async (req, res) => {
+    const userId = req.session.userId;
+    const dni = analityka.normalizujOkres(req.query.dni);
+    try {
+        const produkt = await dbGetAsync(`SELECT id, twoja_cena, cena_konkurencji FROM globalne_produkty WHERE id = ? AND user_id = ?`, [req.params.id, userId]);
+        if (!produkt) return res.status(404).json({ success: false, error: 'Produkt nie istnieje.' });
+        const histKonk = await dbAllAsync(`SELECT cena, sklep, data FROM historia_cen_konkurencji WHERE produkt_id = ? AND user_id = ? ORDER BY id ASC`, [produkt.id, userId]);
+        const histWlasna = await dbAllAsync(`SELECT nowa_cena, data FROM historia_zmian_cen WHERE produkt_id = ? AND user_id = ? ORDER BY id ASC`, [produkt.id, userId]);
+        const seria = analityka.zbudujSerie({
+            histKonk: histKonk || [], histWlasna: histWlasna || [], dni,
+            twojaCena: parseFloat(produkt.twoja_cena), cenaKonkurencji: parseFloat(produkt.cena_konkurencji)
+        });
+        res.json({ success: true, ...seria });
+    } catch (e) {
+        res.status(500).json({ success: false, error: 'Błąd pobierania listy.' });
+    }
+});
+
+// ============== USTAWIENIA ALERTÓW ==============
+app.get('/api/alerty/ustawienia', wymagajSesji, async (req, res) => {
+    try {
+        const k = (await dbGetAsync(`SELECT alert_email, alert_webhook_url, alert_spadek_pct, alert_dostepnosc, alert_wzrost FROM konfiguracja WHERE user_id = ?`, [req.session.userId])) || {};
+        res.json({
+            success: true,
+            alert_email: k.alert_email === 1,
+            alert_webhook_url: k.alert_webhook_url || '',
+            alert_spadek_pct: k.alert_spadek_pct === undefined || k.alert_spadek_pct === null ? 5 : k.alert_spadek_pct,
+            alert_dostepnosc: k.alert_dostepnosc === undefined || k.alert_dostepnosc === null ? true : k.alert_dostepnosc === 1,
+            alert_wzrost: k.alert_wzrost === 1,
+            email_dostepny: weryfikacjaEmailAktywna() && !String(req.session.userId).startsWith('guest_')
+        });
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd odczytu konfiguracji.' }); }
+});
+
+app.put('/api/alerty/ustawienia', wymagajSesji, async (req, res) => {
+    const userId = req.session.userId;
+    if (String(userId).startsWith('guest_')) return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto.' });
+    const b = req.body || {};
+    const spadek = Number(b.alert_spadek_pct);
+    if (!isFinite(spadek) || spadek < 0 || spadek > 90) return res.status(400).json({ success: false, error: 'Procent Floor Price musi być liczbą od 1 do 99.' });
+    const webhook = String(b.alert_webhook_url || '').trim();
+    if (webhook && !analityka.czyAdresWebhookaDozwolony(webhook)) {
+        return res.status(400).json({ success: false, error: 'Adres webhooka musi zaczynać się od https:// i wskazywać publiczny serwer (np. Slack, Discord, Zapier).' });
+    }
+    try {
+        await dbRunAsync(
+            `INSERT INTO konfiguracja (user_id, alert_email, alert_webhook_url, alert_spadek_pct, alert_dostepnosc, alert_wzrost, zapisano) VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id) DO UPDATE SET alert_email = excluded.alert_email, alert_webhook_url = excluded.alert_webhook_url, alert_spadek_pct = excluded.alert_spadek_pct, alert_dostepnosc = excluded.alert_dostepnosc, alert_wzrost = excluded.alert_wzrost`,
+            [userId, b.alert_email ? 1 : 0, webhook, spadek, b.alert_dostepnosc ? 1 : 0, b.alert_wzrost ? 1 : 0, new Date().toISOString()]
+        );
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd zapisu konfiguracji.' }); }
+});
+
+app.post('/api/alerty/test', wymagajSesji, async (req, res) => {
+    const userId = req.session.userId;
+    if (String(userId).startsWith('guest_')) return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto.' });
+    await wyslijAlerty(userId, null, [{ typ: 'test', tresc: 'To jest testowy alert z PriceAI Cloud - jeśli to widzisz, powiadomienia działają.' }]);
+    res.json({ success: true });
+});
+
+// ============== EKSPORT (CSV / Excel) ==============
+async function wierszeEksportuProduktow(userId) {
+    const produkty = await dbAllAsync(`SELECT * FROM globalne_produkty WHERE user_id = ? ORDER BY id ASC`, [userId]);
+    const k = (await dbGetAsync(`SELECT floor_price_procent FROM konfiguracja WHERE user_id = ?`, [userId])) || {};
+    const naglowki = ['Nazwa', 'EAN', 'Waluta', 'Twoja cena', 'Cena konkurencji', 'Różnica %', 'Sugerowana cena', 'Cena minimalna (Floor)', 'Link konkurencji', 'Dostępność u konkurenta', 'Możliwa podwyżka do'];
+    const wiersze = (produkty || []).map(p => {
+        const twoja = parseFloat(p.twoja_cena);
+        const konk = parseFloat(p.cena_konkurencji);
+        const proc = p.floor_price_procent || k.floor_price_procent || 75;
+        const floor = isNaN(twoja) ? '' : Math.round(twoja * proc) / 100;
+        const roznica = (!isNaN(twoja) && !isNaN(konk) && konk > 0) ? Math.round(((twoja - konk) / konk) * 1000) / 10 : '';
+        const sug = analityka.sugestiaPodwyzki({ twojaCena: twoja, cenaKonkurencji: konk, floorPrice: floor || 0 });
+        return [p.nazwa, p.ean || '', p.waluta || '', isNaN(twoja) ? '' : twoja, isNaN(konk) ? '' : konk, roznica, p.sugerowana_cena ? parseFloat(p.sugerowana_cena) || '' : '', floor, p.url_konkurencja || '', p.dostepnosc_konkurencji || '', sug ? sug.cel : ''];
+    });
+    return { naglowki, wiersze };
+}
+
+app.get('/api/eksport/produkty.:format', wymagajSesji, async (req, res) => {
+    const format = req.params.format;
+    if (!['csv', 'xls'].includes(format)) return res.status(404).end();
+    try {
+        const { naglowki, wiersze } = await wierszeEksportuProduktow(req.session.userId);
+        const dzien = new Date().toISOString().slice(0, 10);
+        res.setHeader('Content-Disposition', `attachment; filename="priceai-produkty-${dzien}.${format}"`);
+        if (format === 'csv') {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            return res.send(analityka.generujCsv(naglowki, wiersze));
+        }
+        res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+        res.send(analityka.generujXls(naglowki, wiersze, 'Produkty'));
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd pobierania listy.' }); }
+});
+
+app.get('/api/eksport/historia.:format', wymagajSesji, async (req, res) => {
+    const format = req.params.format;
+    if (!['csv', 'xls'].includes(format)) return res.status(404).end();
+    const dni = analityka.normalizujOkres(req.query.dni || 365);
+    try {
+        const userId = req.session.userId;
+        const rows = await dbAllAsync(
+            `SELECT h.data, p.nazwa, p.ean, h.cena, h.sklep, h.link, h.zrodlo FROM historia_cen_konkurencji h JOIN globalne_produkty p ON p.id = h.produkt_id WHERE h.user_id = ? ORDER BY h.id ASC`,
+            [userId]
+        );
+        const od = Date.now() - dni * 86400000;
+        const wiersze = (rows || []).filter(r => { const t = analityka.parsujDate(r.data); return t !== null && t >= od; })
+            .map(r => [r.data, r.nazwa, r.ean || '', parseFloat(r.cena) || '', r.sklep || '', r.link || '', r.zrodlo || '']);
+        const naglowki = ['Data', 'Produkt', 'EAN', 'Cena konkurencji', 'Sklep', 'Link', 'Źródło'];
+        res.setHeader('Content-Disposition', `attachment; filename="priceai-historia-${dni}d.${format}"`);
+        if (format === 'csv') {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            return res.send(analityka.generujCsv(naglowki, wiersze));
+        }
+        res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+        res.send(analityka.generujXls(naglowki, wiersze, 'Historia cen'));
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd pobierania listy.' }); }
+});
+
+// ============== KLUCZ API (publiczne API: /api/v1/...) ==============
+// Klucz pokazujemy RAZ przy generowaniu; w bazie trzymamy tylko jego skrót (SHA-256).
+app.get('/api/klucz-api', wymagajSesji, async (req, res) => {
+    if (String(req.session.userId).startsWith('guest_')) return res.json({ success: true, ma_klucz: false });
+    const u = await dbGetAsync(`SELECT api_key_podglad FROM users WHERE id = ?`, [req.session.userId]).catch(() => null);
+    res.json({ success: true, ma_klucz: Boolean(u && u.api_key_podglad), podglad: u ? u.api_key_podglad : null });
+});
+
+app.post('/api/klucz-api', wymagajSesji, async (req, res) => {
+    if (String(req.session.userId).startsWith('guest_')) return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto.' });
+    const klucz = 'pai_' + crypto.randomBytes(24).toString('hex');
+    try {
+        await dbRunAsync(`UPDATE users SET api_key_hash = ?, api_key_podglad = ? WHERE id = ?`, [analityka.haszKluczaApi(klucz, crypto), klucz.slice(0, 8) + '…' + klucz.slice(-4), req.session.userId]);
+        res.json({ success: true, klucz });
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd zapisu.' }); }
+});
+
+app.delete('/api/klucz-api', wymagajSesji, async (req, res) => {
+    try {
+        await dbRunAsync(`UPDATE users SET api_key_hash = NULL, api_key_podglad = NULL WHERE id = ?`, [req.session.userId]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd zapisu.' }); }
+});
+
+async function wymagajKluczaApi(req, res, next) {
+    const m = String(req.headers.authorization || '').match(/^Bearer\s+(pai_[a-f0-9]{48})$/i);
+    if (!m) return res.status(401).json({ success: false, error: 'Brak klucza dostępu.' });
+    try {
+        const u = await dbGetAsync(`SELECT id FROM users WHERE api_key_hash = ?`, [analityka.haszKluczaApi(m[1].toLowerCase(), crypto)]);
+        if (!u) return res.status(401).json({ success: false, error: 'Nieprawidłowy klucz dostępu.' });
+        req.apiUserId = String(u.id);
+        next();
+    } catch (e) { res.status(500).json({ success: false, error: 'Błąd bazy danych.' }); }
+}
+
+app.get('/api/v1/produkty', wymagajKluczaApi, async (req, res) => {
+    const { naglowki, wiersze } = await wierszeEksportuProduktow(req.apiUserId);
+    const rows = await dbAllAsync(`SELECT id FROM globalne_produkty WHERE user_id = ? ORDER BY id ASC`, [req.apiUserId]);
+    res.json({ success: true, produkty: wiersze.map((w, i) => ({ id: rows[i] && rows[i].id, ...Object.fromEntries(naglowki.map((n, j) => [n, w[j]])) })) });
+});
+
+app.get('/api/v1/produkty/:id/historia', wymagajKluczaApi, async (req, res) => {
+    const dni = analityka.normalizujOkres(req.query.dni);
+    const produkt = await dbGetAsync(`SELECT id, twoja_cena, cena_konkurencji FROM globalne_produkty WHERE id = ? AND user_id = ?`, [req.params.id, req.apiUserId]);
+    if (!produkt) return res.status(404).json({ success: false, error: 'Nie znaleziono produktów.' });
+    const histKonk = await dbAllAsync(`SELECT cena, sklep, data FROM historia_cen_konkurencji WHERE produkt_id = ? AND user_id = ? ORDER BY id ASC`, [produkt.id, req.apiUserId]);
+    const histWlasna = await dbAllAsync(`SELECT nowa_cena, data FROM historia_zmian_cen WHERE produkt_id = ? AND user_id = ? ORDER BY id ASC`, [produkt.id, req.apiUserId]);
+    res.json({ success: true, ...analityka.zbudujSerie({ histKonk: histKonk || [], histWlasna: histWlasna || [], dni, twojaCena: parseFloat(produkt.twoja_cena), cenaKonkurencji: parseFloat(produkt.cena_konkurencji) }) });
 });
 
 app.get('/api/globalne-produkty', wymagajSesji, (req, res) => {
@@ -5106,6 +5430,7 @@ async function obslugaAutomatycznegoUzytkownika(userId, przebiegId) {
             // Wcześniej przy ustawionej walucie kraj i tak brany był z IP serwera (np. NL na Railway).
             const targetCountry = (p.kraj && p.kraj.trim()) ? p.kraj.trim().toLowerCase() : ((p.waluta && p.waluta !== 'AUTO') ? krajDlaWaluty(targetCurrency) : kontekstRynkuUzytkownika.targetCountry);
             const cena = await pobierzCeneZeStrony(p.url_konkurencja, targetCountry, targetCurrency);
+            await zarejestrujOdczytCenyKonkurencji(userId, p, cena, 'Harmonogram automatyczny');
             await dbRunAsync(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cena.toFixed(2), p.id]);
             odswiezonoCen++;
         } catch (e) {
@@ -5410,6 +5735,43 @@ async function przetwarzajKolejkeHarmonogramow() {
             .finally(() => { liczbaAktywnychPrzebiegow--; });
     }
 }
+
+// ============== MONITORING 24/7 ==============
+// Poza codziennym harmonogramem (przeliczanie cen) co kilka godzin sprawdzamy SAMĄ
+// cenę i dostępność u konkurentów i od razu wysyłamy alerty. Tylko szybka metoda
+// (zwykłe zapytanie HTTP) - bez przeglądarki, Zyte i tokenów AI.
+const MONITORING_CO_GODZIN = Math.max(0.5, parseFloat(process.env.MONITORING_CO_GODZIN || '4'));
+const MONITORING_PARTIA = Math.max(1, parseInt(process.env.MONITORING_PARTIA || '60', 10));
+let monitoringTrwa = false;
+async function monitorujCenyKonkurencji() {
+    if (monitoringTrwa) return;
+    monitoringTrwa = true;
+    try {
+        const prog = new Date(Date.now() - MONITORING_CO_GODZIN * 3600 * 1000).toISOString();
+        const produkty = await dbAllAsync(
+            `SELECT * FROM globalne_produkty
+             WHERE url_konkurencja IS NOT NULL AND url_konkurencja != '' AND user_id NOT LIKE 'guest_%'
+               AND (monitoring_sprawdzono IS NULL OR monitoring_sprawdzono < ?)
+             ORDER BY monitoring_sprawdzono ASC LIMIT ?`, [prog, MONITORING_PARTIA]
+        );
+        for (const p of produkty || []) {
+            // Znacznik ustawiamy PRZED sprawdzeniem - produkt z błędnym linkiem nie blokuje kolejki.
+            await dbRunAsync(`UPDATE globalne_produkty SET monitoring_sprawdzono = ? WHERE id = ?`, [new Date().toISOString(), p.id]);
+            try {
+                const cena = await pobierzCeneZeStrony(p.url_konkurencja, null, null, { tylkoDarmowe: true });
+                const zmiana = await zarejestrujOdczytCenyKonkurencji(p.user_id, p, cena, 'Monitoring automatyczny', { tylkoGdyZmiana: true });
+                if (zmiana) await dbRunAsync(`UPDATE globalne_produkty SET cena_konkurencji = ? WHERE id = ?`, [cena.toFixed(2), p.id]);
+            } catch (e) { /* strona chwilowo niedostępna - spróbujemy w następnym cyklu */ }
+            await new Promise(r => setTimeout(r, 1500)); // grzecznie wobec serwerów konkurencji
+        }
+    } catch (e) {
+        console.log('⚠️  Monitoring cen:', e.message);
+    } finally {
+        monitoringTrwa = false;
+    }
+}
+setInterval(monitorujCenyKonkurencji, 10 * 60 * 1000);
+setTimeout(monitorujCenyKonkurencji, 90 * 1000);
 
 setInterval(sprawdzHarmonogramy, 60 * 1000);
 setInterval(przetwarzajKolejkeHarmonogramow, 10 * 1000);

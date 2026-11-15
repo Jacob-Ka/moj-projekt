@@ -112,13 +112,13 @@ async function pobierzPowiadomienia() {
         return;
     }
 
-    const ikonaTypu = (typ) => ({ floor_price: '⚠️', harmonogram: '⏰', niskie_tokeny: '🎟️' }[typ] || '🔔');
+    const ikonaTypu = (typ) => ({ floor_price: '⚠️', harmonogram: '⏰', niskie_tokeny: '🎟️', spadek_ceny: '📉', wzrost_ceny: '📈', ponizej_progu: '🛑', brak_towaru: '🚫', powrot_towaru: '✅', test: '📨' }[typ] || '🔔');
 
     lista.innerHTML = dane.map(p => `
         <div style="background:${p.przeczytane ? '#0f172a' : '#1e1b4b'}; border:1px solid ${p.przeczytane ? '#334155' : '#4338ca'}; border-radius:8px; padding:10px 12px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div style="flex:1;">
-                    <span style="font-size:13px;">${ikonaTypu(p.typ)} ${p.tresc}</span>
+                    <span style="font-size:13px;">${ikonaTypu(p.typ)} ${tpAuto(p.tresc)}</span>
                     <div style="font-size:11px; color:#64748b; margin-top:4px;">${p.data}</div>
                 </div>
                 ${!p.przeczytane ? `<button onclick="oznaczPowiadomienieJakoPrzeczytane(${p.id})" style="background:none; padding:0; font-size:11px; color:#818cf8; text-decoration:underline; white-space:nowrap;">OK</button>` : ''}
@@ -1258,6 +1258,12 @@ function renderujTabele(produkty) {
                                 : `<button class="chart-badge-btn" onclick="ustawLinkKonkurencji(${p.id})">➕ ${t('add_link')}</button>
                                    <button class="chart-badge-btn" onclick="znajdzKonkurencjeAutomatycznie(${p.id}, this)">🌐 ${t('find_automatically')}</button>`
                         }
+                        ${(() => {
+                            const podw = sugestiaPodwyzkiKlient(p.twoja_cena, p.cena_konkurencji, floorPrice);
+                            const brak = p.dostepnosc_konkurencji === 'niedostepny' ? `<div style="font-size:11px; color:#fbbf24;">${tpAuto('🚫 Konkurent nie ma towaru')}</div>` : '';
+                            const pod = podw ? `<div style="font-size:11px; color:#34d399; max-width:200px;" title="${tpAuto('Jesteś tańszy od rynku - możesz podnieść cenę i nadal być pierwszy.')}">💡 ${tpAuto('Możesz podnieść do')} <strong>${podw.cel.toFixed(2)} ${symbol}</strong> (+${podw.pct}%)</div>` : '';
+                            return brak + pod;
+                        })()}
                         <span onclick="zmienKrajProduktu(${p.id}, '${p.kraj || ''}')" style="font-size:11px; color:#64748b; cursor:pointer; text-decoration:underline dotted;">🌍 ${t('country_label')}: ${p.kraj ? p.kraj.toUpperCase() : t('country_auto')}</span>
                     </div>
                 </td>
@@ -1330,6 +1336,8 @@ const pluginLiniiFloorPrice = {
     }
 };
 
+let stanWykresu = { id: null, nazwa: '', cenaBazowa: 0, cenaKonk: 0, symbol: '', floor: 0, dni: 30 };
+
 function pokazWykresHistorii(productId, nazwaProduktu, cenaBazowa, cenaKonkurencjiRef, symbol, floorPrice) {
     const modal = document.getElementById('historyModal');
     const modalTitle = document.getElementById('modalTitle');
@@ -1337,8 +1345,7 @@ function pokazWykresHistorii(productId, nazwaProduktu, cenaBazowa, cenaKonkurenc
 
     modalTitle.innerText = tpAuto(`📊 Porównanie cen: ${nazwaProduktu}`);
     modal.style.display = 'flex';
-
-    if (chartInstance) chartInstance.destroy();
+    stanWykresu = { id: productId, nazwa: nazwaProduktu, cenaBazowa, cenaKonk: cenaKonkurencjiRef, symbol, floor: parseFloat(floorPrice) || 0, dni: stanWykresu.dni || 30 };
 
     // Krótkie podsumowanie tekstowe nad wykresem - procentowa różnica jest
     // dla oka szybsza do przeczytania niż porównywanie wysokości słupków.
@@ -1350,45 +1357,176 @@ function pokazWykresHistorii(productId, nazwaProduktu, cenaBazowa, cenaKonkurenc
                 ? tpAuto(`Twoja cena jest o <strong style="color:#f87171;">${roznica.toFixed(1)}% wyższa</strong> niż konkurencja`)
                 : roznica < -0.5
                     ? tpAuto(`Twoja cena jest o <strong style="color:#34d399;">${Math.abs(roznica).toFixed(1)}% niższa</strong> niż konkurencja`)
-                    : `Twoja cena jest <strong style="color:#94a3b8;">praktycznie taka sama</strong> jak u konkurencji`;
+                    : tpAuto(`Twoja cena jest <strong style="color:#94a3b8;">praktycznie taka sama</strong> jak u konkurencji`);
             podsumowanieEl.innerHTML = tekst;
         } else {
             podsumowanieEl.innerHTML = tpAuto(`<span style="color:#94a3b8;">Brak znanej ceny konkurencji do porównania.</span>`);
         }
     }
+    przelaczOkresWykresu(stanWykresu.dni);
+}
 
-    // Pokazujemy wyłącznie realne, aktualne wartości. Historyczne notowania
-    // wymagają osobnej tabeli zapisującej codzienne odczyty (do wdrożenia
-    // po podłączeniu realnego źródła danych).
-    chartInstance = new Chart(document.getElementById('priceHistoryChart').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: ['Twoja cena', 'Cena konkurencji'],
-            datasets: [{
-                data: [parseFloat(cenaBazowa), parseFloat(cenaKonkurencjiRef) || null],
-                jednostka: symbol,
-                backgroundColor: ['#4f46e5', '#d97706'],
-                hoverBackgroundColor: ['#6366f1', '#f59e0b'],
-                borderRadius: 8,
-                borderSkipped: false,
-                barThickness: 90
-            }]
-        },
+function formatDatyWykresu(ms, dni) {
+    const d = new Date(ms);
+    const lang = window.aktualnyJezyk || 'pl';
+    const loc = { pl: 'pl-PL', en: 'en-GB', es: 'es-ES', de: 'de-DE', fr: 'fr-FR' }[lang] || 'pl-PL';
+    return d.toLocaleDateString(loc, dni > 120 ? { month: 'short', year: '2-digit' } : { day: 'numeric', month: 'short' });
+}
+
+// Wykres trendu: cena konkurencji i Twoja cena w czasie (30 / 90 / 365 dni) + linia Floor Price.
+async function przelaczOkresWykresu(dni) {
+    stanWykresu.dni = dni;
+    document.querySelectorAll('#okresWykresu button').forEach(b => {
+        const aktywny = Number(b.dataset.dni) === dni;
+        b.style.background = aktywny ? '#4f46e5' : '';
+        b.style.color = aktywny ? '#fff' : '';
+    });
+    const statEl = document.getElementById('statystykiWykresu');
+    if (statEl) statEl.innerHTML = '<div class="spinner"></div>';
+    const id = stanWykresu.id;
+    const dane = await apiFetch(`/historia-wykres/${id}?dni=${dni}`);
+    if (id !== stanWykresu.id) return; // użytkownik zdążył otworzyć inny produkt
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    const ctx = document.getElementById('priceHistoryChart').getContext('2d');
+    if (!dane || !dane.success) {
+        if (statEl) statEl.innerText = (dane && dane.error) || '';
+        return;
+    }
+    const sym = stanWykresu.symbol;
+    const zbiory = [];
+    if (dane.konkurencja.length) zbiory.push({ label: tpAuto('Konkurencja'), data: dane.konkurencja.map(p => ({ x: p.t, y: p.v })), borderColor: '#d97706', backgroundColor: '#d97706', tension: 0.15, pointRadius: dane.konkurencja.length > 40 ? 0 : 3, borderWidth: 2, stepped: false });
+    if (dane.wlasna.length) zbiory.push({ label: tpAuto('Twoja cena'), data: dane.wlasna.map(p => ({ x: p.t, y: p.v })), borderColor: '#818cf8', backgroundColor: '#818cf8', stepped: 'after', pointRadius: dane.wlasna.length > 40 ? 0 : 3, borderWidth: 2 });
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: zbiory },
         options: {
+            parsing: false,
             responsive: true,
             maintainAspectRatio: false,
-            layout: { padding: { top: 24 } },
-            plugins: { legend: { display: false } },
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#cbd5e1' } },
+                tooltip: { callbacks: {
+                    title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString() : '',
+                    label: (item) => `${item.dataset.label}: ${item.parsed.y.toFixed(2)} ${sym}`
+                } }
+            },
             scales: {
-                x: { ticks: { color: '#cbd5e1', font: { weight: '600' } }, grid: { display: false } },
-                y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true }
+                x: { type: 'linear', min: dane.od, max: dane.do, ticks: { color: '#94a3b8', maxTicksLimit: 7, callback: (v) => formatDatyWykresu(v, dni) }, grid: { color: '#1e293b' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, suggestedMin: stanWykresu.floor > 0 ? stanWykresu.floor * 0.95 : undefined }
             }
         },
-        plugins: [pluginEtykietWartosci, pluginLiniiFloorPrice]
+        plugins: [pluginLiniiFloorPrice]
     });
-    chartInstance.config._floorPrice = parseFloat(floorPrice) || 0;
+    chartInstance.config._floorPrice = stanWykresu.floor;
     chartInstance.update();
+
+    if (statEl) {
+        const st = dane.statystyki;
+        statEl.innerText = st
+            ? `${tpAuto('Konkurencja w tym okresie')}: min ${st.min.toFixed(2)} · max ${st.max.toFixed(2)} · ${tpAuto('średnio')} ${st.srednia.toFixed(2)} ${sym} · ${tpAuto('zmiana')} ${st.zmianaPct >= 0 ? '+' : ''}${st.zmianaPct.toFixed(1)}%`
+            : tpAuto('Brak zapisanych notowań konkurencji w tym okresie - historia zbiera się przy każdym odświeżeniu ceny.');
+    }
 }
+
+// Sugestia podwyżki (dynamic pricing) - ta sama logika co sugestiaPodwyzki() na serwerze.
+function sugestiaPodwyzkiKlient(twoja, konk, floor) {
+    twoja = parseFloat(twoja); konk = parseFloat(konk); floor = parseFloat(floor) || 0;
+    if (!(twoja > 0) || !(konk > 0)) return null;
+    const luka = ((konk - twoja) / konk) * 100;
+    if (luka < 3) return null;
+    let cel = Math.min(konk * 0.99, twoja * 1.25);
+    if (cel < floor) cel = floor;
+    cel = Math.round(cel * 100) / 100;
+    if (cel <= twoja * 1.005) return null;
+    return { cel, pct: Math.round(((cel / twoja) - 1) * 1000) / 10, luka: Math.round(luka * 10) / 10 };
+}
+
+// ============== ALERTY, EKSPORT, FEED XML, KLUCZ API ==============
+async function wczytajAlerty() {
+    if (!document.getElementById('alertSpadekPct')) return;
+    const d = await apiFetch('/alerty/ustawienia');
+    if (!d || !d.success) return;
+    document.getElementById('alertEmail').checked = !!d.alert_email;
+    document.getElementById('alertEmail').disabled = !d.email_dostepny;
+    document.getElementById('alertDostepnosc').checked = !!d.alert_dostepnosc;
+    document.getElementById('alertWzrost').checked = !!d.alert_wzrost;
+    document.getElementById('alertSpadekPct').value = d.alert_spadek_pct;
+    document.getElementById('alertWebhook').value = d.alert_webhook_url || '';
+}
+
+async function zapiszAlerty() {
+    const d = await apiFetch('/alerty/ustawienia', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            alert_email: document.getElementById('alertEmail').checked,
+            alert_dostepnosc: document.getElementById('alertDostepnosc').checked,
+            alert_wzrost: document.getElementById('alertWzrost').checked,
+            alert_spadek_pct: parseFloat(document.getElementById('alertSpadekPct').value),
+            alert_webhook_url: document.getElementById('alertWebhook').value.trim()
+        })
+    });
+    if (d && d.success) pokazToast(tpAuto('Ustawienia alertów zapisane.'), 'success');
+    else pokazToast((d && d.error) || tpAuto('Błąd zapisu.'), 'error');
+}
+
+async function testujAlert() {
+    const d = await apiFetch('/alerty/test', { method: 'POST' });
+    if (d && d.success) {
+        pokazToast(tpAuto('Wysłano testowy alert - sprawdź powiadomienia, e-mail i webhook.'), 'success');
+        if (typeof pobierzPowiadomienia === 'function') pobierzPowiadomienia();
+    } else pokazToast((d && d.error) || tpAuto('Błąd zapisu.'), 'error');
+}
+
+function pobierzPlikZSerwera(sciezka) {
+    // ciasteczko sesji idzie razem z nawigacją, a Content-Disposition wymusza pobranie pliku
+    window.location.href = sciezka;
+}
+
+async function importujFeedXml(inputEl) {
+    const plik = inputEl.files?.[0];
+    if (!plik) return;
+    const xml = await plik.text();
+    inputEl.value = '';
+    const d = await apiFetch('/produkty/import-feed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ xml })
+    });
+    if (d && d.success) {
+        pokazToast(d.pominieto > 0
+            ? `Zaimportowano ${d.zaimportowano} nowych, zaktualizowano ${d.zaktualizowano} istniejących (pominięto ${d.pominieto} - brak nazwy/ceny albo limit planu).`
+            : `Zaimportowano ${d.zaimportowano} nowych, zaktualizowano ${d.zaktualizowano} istniejących.`, 'success');
+        if (typeof pobierzDane === 'function') pobierzDane();
+    } else {
+        pokazToast((d && d.error) || tpAuto('Błąd importu CSV.'), 'error');
+    }
+}
+
+async function wczytajKluczApi() {
+    const el = document.getElementById('kluczApiStatus');
+    if (!el) return;
+    const d = await apiFetch('/klucz-api');
+    el.innerText = d && d.ma_klucz ? `${tpAuto('Aktywny klucz')}: ${d.podglad}` : tpAuto('Brak klucza API.');
+}
+
+async function generujKluczApi() {
+    const d = await apiFetch('/klucz-api', { method: 'POST' });
+    const el = document.getElementById('kluczApiStatus');
+    if (d && d.success && el) {
+        el.innerText = `${tpAuto('Twój nowy klucz (pokazany tylko raz - skopiuj go teraz)')}: ${d.klucz}`;
+    } else pokazToast((d && d.error) || tpAuto('Błąd zapisu.'), 'error');
+}
+
+async function usunKluczApi() {
+    potwierdz(tpAuto('Usunąć klucz API? Integracje, które go używają, przestaną działać.'), async () => {
+        const d = await apiFetch('/klucz-api', { method: 'DELETE' });
+        if (d && d.success) wczytajKluczApi();
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => { wczytajAlerty(); wczytajKluczApi(); });
 
 // ============== LOG ZMIAN CENY ==============
 async function pokazLogZmian(productId, nazwaProduktu) {

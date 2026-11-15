@@ -575,6 +575,32 @@
                     <button class="btn-success" onclick="document.getElementById('plikCsvImport').click()">⬆️ Importuj z CSV</button>
                     <button class="btn-export" style="margin-top:8px; width:100%;" onclick="eksportujCSV()">⬇️ Eksportuj do CSV</button>
                 </div>
+                <div class="sync-card">
+                    <h4>🔔 Alerty o zmianach cen</h4>
+                    <p>Dostajesz powiadomienie w aplikacji, a opcjonalnie e-mailem i na Slack/Discord/webhook, gdy konkurent obniży cenę albo nie ma towaru. Ceny konkurencji sprawdzamy automatycznie całą dobę, mniej więcej co 4 godziny - alert dostajesz po wykryciu zmiany.</p>
+                    <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin:6px 0;"><input type="checkbox" id="alertEmail"> Wysyłaj alerty e-mailem na adres konta</label>
+                    <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin:6px 0;"><input type="checkbox" id="alertDostepnosc"> Powiadom, gdy konkurent nie ma towaru (okazja do podwyżki)</label>
+                    <label style="display:flex; gap:8px; align-items:center; font-size:13px; margin:6px 0;"><input type="checkbox" id="alertWzrost"> Powiadom, gdy konkurent podniesie cenę</label>
+                    <label style="display:block; font-size:12px; color:#94a3b8; margin-top:8px;">Próg zmiany ceny u konkurenta (%)</label>
+                    <input type="number" id="alertSpadekPct" min="0" max="90" step="1" value="5" style="width:100%; margin-bottom:8px;">
+                    <label style="display:block; font-size:12px; color:#94a3b8;">Webhook (Slack, Discord, Zapier)</label>
+                    <input type="text" id="alertWebhook" placeholder="https://hooks.slack.com/services/..." style="width:100%; margin-bottom:8px;">
+                    <button class="btn-success" onclick="zapiszAlerty()">💾 Zapisz alerty</button>
+                    <button class="btn-export" style="margin-top:8px; width:100%;" onclick="testujAlert()">📨 Wyślij testowy alert</button>
+                </div>
+                <div class="sync-card">
+                    <h4>📊 Excel, feed XML i API</h4>
+                    <p>Eksport do Excela, import feedu produktowego XML (Google Merchant Center) oraz dostęp przez API.</p>
+                    <input type="file" id="plikFeedXml" accept=".xml,text/xml,application/xml" style="display:none;" onchange="importujFeedXml(this)">
+                    <button class="btn-success" onclick="document.getElementById('plikFeedXml').click()">⬆️ Importuj feed XML</button>
+                    <button class="btn-export" style="margin-top:8px; width:100%;" onclick="pobierzPlikZSerwera('/api/eksport/produkty.xls')">⬇️ Produkty do Excela</button>
+                    <button class="btn-export" style="margin-top:8px; width:100%;" onclick="pobierzPlikZSerwera('/api/eksport/historia.xls?dni=365')">⬇️ Historia cen do Excela (rok)</button>
+                    <h5 style="margin:14px 0 6px; font-size:13px;">Klucz API</h5>
+                    <div id="kluczApiStatus" style="font-size:12px; color:#94a3b8; word-break:break-all;"></div>
+                    <div style="font-size:11px; color:#64748b; margin:6px 0;">Nagłówek: Authorization: Bearer TWÓJ_KLUCZ. Przykłady: GET /api/v1/produkty oraz GET /api/v1/produkty/ID/historia?dni=90</div>
+                    <button class="btn-success" onclick="generujKluczApi()">🔑 Wygeneruj nowy klucz</button>
+                    <button class="btn-export" style="margin-top:8px; width:100%;" onclick="usunKluczApi()">Usuń klucz</button>
+                </div>
             </div>
         </div>
     </div>
@@ -587,9 +613,15 @@
                 <button class="close-modal" onclick="document.getElementById('historyModal').style.display='none'">&times;</button>
             </div>
             <div id="podsumowaniePorownania" style="text-align:center; font-size:14px; color:#f8fafc; margin-bottom:14px;"></div>
+            <div id="okresWykresu" style="display:flex; gap:6px; justify-content:center; margin-bottom:10px;">
+                <button type="button" data-dni="30" class="chart-badge-btn" onclick="przelaczOkresWykresu(30)">30 dni</button>
+                <button type="button" data-dni="90" class="chart-badge-btn" onclick="przelaczOkresWykresu(90)">90 dni</button>
+                <button type="button" data-dni="365" class="chart-badge-btn" onclick="przelaczOkresWykresu(365)">1 rok</button>
+            </div>
             <div class="chart-container">
                 <canvas id="priceHistoryChart"></canvas>
             </div>
+            <div id="statystykiWykresu" style="text-align:center; font-size:12px; color:#94a3b8; margin-top:10px;"></div>
         </div>
     </div>
 
