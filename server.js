@@ -389,6 +389,35 @@ const STRIPE_PRICE_ID = {
     SCALE: { mc: process.env.STRIPE_PRICE_SCALE, rok: process.env.STRIPE_PRICE_SCALE_ROK },
     ENTERPRISE: { mc: process.env.STRIPE_PRICE_ENTERPRISE, rok: process.env.STRIPE_PRICE_ENTERPRISE_ROK }
 };
+// ---- Ceny w USD i EUR (klient wybiera walutę rozliczenia w oknie planów) ----
+// Przeliczone z cen PLN (kurs ok. 3,7 zł/$ i 4,25 zł/€, zaokrąglone do
+// "ładnych" kwot, więc marża względem kosztu AI zostaje taka sama jak w PLN).
+// Format: [miesięcznie, rocznie] - roczna = 10 x miesięczna (2 miesiące gratis).
+// TO JEDYNE MIEJSCE, w którym zmieniasz kwoty w USD/EUR - pamiętaj, żeby ceny
+// w Stripe miały dokładnie te same kwoty.
+const CENY_WALUTY = {
+    USD: { STARTER: [14, 140], PRO: [79, 790], BUSINESS: [399, 3990], SCALE: [1299, 12990], ENTERPRISE: [2699, 26990], CORPORATE: [3999, 39990], UNLIMITED: [6499, 64990] },
+    EUR: { STARTER: [12, 120], PRO: [69, 690], BUSINESS: [349, 3490], SCALE: [1149, 11490], ENTERPRISE: [2299, 22990], CORPORATE: [3499, 34990], UNLIMITED: [5799, 57990] }
+};
+const WALUTY_PLANOW = ['PLN', 'USD', 'EUR'];
+function cenaPlanu(plan, waluta, okres) {
+    const w = String(waluta || 'PLN').toUpperCase();
+    if (w !== 'PLN' && CENY_WALUTY[w] && CENY_WALUTY[w][plan]) return CENY_WALUTY[w][plan][okres === 'rok' ? 1 : 0];
+    const l = LIMITY_PLANOW[plan];
+    return l ? (okres === 'rok' ? l.cena_rok : l.cena_mc) : 0;
+}
+function formatCenaPlanu(kwota, waluta) {
+    const w = String(waluta || 'PLN').toUpperCase();
+    return w === 'USD' ? `$${kwota}` : w === 'EUR' ? `€${kwota}` : `${kwota} zł`;
+}
+// ID cen Stripe dla USD/EUR: STRIPE_PRICE_<PLAN>_<WALUTA> oraz STRIPE_PRICE_<PLAN>_ROK_<WALUTA>
+const STRIPE_PRICE_ID_WALUTY = { USD: {}, EUR: {} };
+for (const w of ['USD', 'EUR']) {
+    for (const plan of PLANY_SAMOOBSLUGOWE) {
+        STRIPE_PRICE_ID_WALUTY[w][plan] = { mc: process.env[`STRIPE_PRICE_${plan}_${w}`], rok: process.env[`STRIPE_PRICE_${plan}_ROK_${w}`] };
+    }
+}
+
 // Odwrotna mapa (ID ceny -> nazwa planu) - potrzebna w webhookach, gdzie
 // Stripe mówi nam "subskrypcja korzysta z tej ceny", a my musimy wiedzieć,
 // KTÓRY to nasz plan. Obejmuje TERAZ obie ceny (miesięczną i roczną) każdego
@@ -399,6 +428,12 @@ const STRIPE_PLAN_PO_CENIE = {};
 for (const [plan, ceny] of Object.entries(STRIPE_PRICE_ID)) {
     if (ceny.mc) STRIPE_PLAN_PO_CENIE[ceny.mc] = plan;
     if (ceny.rok) STRIPE_PLAN_PO_CENIE[ceny.rok] = plan;
+}
+for (const w of ['USD', 'EUR']) {
+    for (const [plan, ceny] of Object.entries(STRIPE_PRICE_ID_WALUTY[w])) {
+        if (ceny.mc) STRIPE_PLAN_PO_CENIE[ceny.mc] = plan;
+        if (ceny.rok) STRIPE_PLAN_PO_CENIE[ceny.rok] = plan;
+    }
 }
 
 // Wspólna funkcja do wywołań Stripe REST API. Stripe oczekuje danych w
@@ -548,7 +583,7 @@ async function wyslijMailPrzypomnienieTrial(email, plan, cena, dataKonca) {
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
             <h2 style="color:#f59e0b;">Twój okres próbny kończy się za 3 dni</h2>
             <p>Cześć! Przypominamy, że Twój darmowy okres próbny planu <strong>${plan}</strong> kończy się <strong>${formatujDatePl(dataKonca)}</strong>.</p>
-            <p>Od tego dnia z podanej karty automatycznie pobierzemy <strong>${cena} zł</strong> za pierwszy miesiąc.</p>
+            <p>Od tego dnia z podanej karty automatycznie pobierzemy <strong>${cena}</strong> za pierwszy miesiąc.</p>
             <p>Jeśli chcesz zrezygnować, zrób to przed tą datą przez "Zarządzaj subskrypcją" w panelu - nic Cię to nie będzie kosztować.</p>
         </div>`;
     return wyslijEmail(email, 'Twój okres próbny kończy się za 3 dni - PriceAI Cloud', html);
@@ -1363,7 +1398,11 @@ app.post('/api/onboarding/zakoncz', wymagajSesji, (req, res) => {
 // Zwraca cennik wszystkich planów (do wyświetlenia na stronie/w modalu wyboru planu).
 app.get('/api/plany', (req, res) => {
     const wynik = {};
-    PLANY_PLATNE.forEach(nazwa => { wynik[nazwa] = LIMITY_PLANOW[nazwa]; });
+    PLANY_PLATNE.forEach(nazwa => {
+        const ceny = {};
+        WALUTY_PLANOW.forEach(w => { ceny[w] = { mc: cenaPlanu(nazwa, w, 'mc'), rok: cenaPlanu(nazwa, w, 'rok') }; });
+        wynik[nazwa] = { ...LIMITY_PLANOW[nazwa], ceny };
+    });
     res.json(wynik);
 });
 
@@ -1409,16 +1448,17 @@ app.post('/api/stripe/checkout', wymagajSesji, async (req, res) => {
         return res.status(403).json({ success: false, error: 'Załóż prawdziwe konto, aby wykupić płatny plan.' });
     }
     const { plan, okres } = req.body;
+    const walutaPlanu = WALUTY_PLANOW.includes(String(req.body.waluta || '').toUpperCase()) ? String(req.body.waluta).toUpperCase() : 'PLN';
     if (!PLANY_SAMOOBSLUGOWE.includes(plan)) {
         return res.status(400).json({ success: false, error: 'Ten plan jest dostępny tylko po kontakcie z nami - napisz na kontakt.priceaicloud@gmail.com.' });
     }
     // Domyślnie miesięcznie, jeśli front-end z jakiegoś powodu nie przesłał
     // okresu - bezpieczny wybór, bo cena miesięczna zawsze powinna istnieć.
     const wybranyOkres = okres === 'rok' ? 'rok' : 'mc';
-    const priceId = STRIPE_PRICE_ID[plan]?.[wybranyOkres];
+    const priceId = walutaPlanu === 'PLN' ? STRIPE_PRICE_ID[plan]?.[wybranyOkres] : STRIPE_PRICE_ID_WALUTY[walutaPlanu]?.[plan]?.[wybranyOkres];
     if (!priceId) {
         const nazwaOkresu = wybranyOkres === 'rok' ? 'roczne' : 'miesięczne';
-        return res.status(503).json({ success: false, error: `Płatności ${nazwaOkresu} dla planu ${plan} nie są jeszcze skonfigurowane.` });
+        return res.status(503).json({ success: false, error: `Płatności ${nazwaOkresu} w ${walutaPlanu} dla planu ${plan} nie są jeszcze skonfigurowane.` });
     }
 
     try {
@@ -1458,7 +1498,7 @@ app.post('/api/stripe/checkout', wymagajSesji, async (req, res) => {
             // automatycznie, wyśle nam webhook 3 dni przed końcem
             // (customer.subscription.trial_will_end), na podstawie
             // którego wysyłamy klientowi przypomnienie mailem.
-            subscription_data: { trial_period_days: 7, metadata: { user_id: String(req.session.userId), plan } }
+            subscription_data: { trial_period_days: 7, metadata: { user_id: String(req.session.userId), plan, waluta: walutaPlanu } }
         });
 
         res.json({ success: true, url: session.url });
@@ -1543,7 +1583,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                     fetch(process.env.DISCORD_WEBHOOK_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content: `💰 **Nowa sprzedaż!** ${user?.email || `user #${userId}`} kupił plan **${plan}** (${limity.cena_mc} zł/mies.)${zPolecenia}` })
+                        body: JSON.stringify({ content: `💰 **Nowa sprzedaż!** ${user?.email || `user #${userId}`} kupił plan **${plan}** (${formatCenaPlanu(cenaPlanu(plan, session.metadata?.waluta, 'mc'), session.metadata?.waluta)}/mies.)${zPolecenia}` })
                     }).catch(() => {});
                 }
                 break;
@@ -1577,7 +1617,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                 const user = await dbGetAsync(`SELECT email FROM users WHERE id = ?`, [userId]);
                 if (!user) break;
                 const dataKonca = new Date(subscription.trial_end * 1000).toISOString();
-                await wyslijMailPrzypomnienieTrial(user.email, plan, LIMITY_PLANOW[plan].cena_mc, dataKonca);
+                await wyslijMailPrzypomnienieTrial(user.email, plan, formatCenaPlanu(cenaPlanu(plan, subscription.metadata?.waluta, 'mc'), subscription.metadata?.waluta), dataKonca);
                 break;
             }
             case 'invoice.payment_succeeded': {

@@ -296,11 +296,32 @@ async function edytujFloorPriceProduktu(id, aktualnyProcent) {
 
 let okresPlanu = 'mc';
 
+// Waluta rozliczenia planów: zapamiętana wartość, a gdy jej nie ma - dobrana
+// do języka interfejsu (EN -> USD, DE/FR/ES -> EUR, PL -> PLN).
+let walutaPlanu = (function () {
+    let z = null;
+    try { z = localStorage.getItem('waluta_planu_priceai'); } catch (e) {}
+    if (['PLN', 'USD', 'EUR'].includes(z)) return z;
+    const j = (typeof window !== 'undefined' && window.aktualnyJezyk) || (function () { try { return localStorage.getItem('jezyk_priceai'); } catch (e) { return null; } })() || 'pl';
+    return j === 'en' ? 'USD' : (['de', 'fr', 'es'].includes(j) ? 'EUR' : 'PLN');
+})();
+
 function ustawOkresPlanu(okres, btnEl) {
     okresPlanu = okres;
-    document.querySelectorAll('#planModal .filter-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#btnOkresMc, #btnOkresRok').forEach(b => b.classList.remove('active'));
     if (btnEl) btnEl.classList.add('active');
     renderujPlany(window.cennik);
+}
+
+function ustawWalutePlanu(waluta) {
+    if (!['PLN', 'USD', 'EUR'].includes(waluta)) return;
+    walutaPlanu = waluta;
+    try { localStorage.setItem('waluta_planu_priceai', waluta); } catch (e) {}
+    renderujPlany(window.cennik);
+}
+
+function formatujCenePlanu(kwota, waluta) {
+    return waluta === 'USD' ? '$' + kwota : (waluta === 'EUR' ? '€' + kwota : kwota + ' zł');
 }
 
 async function otworzModalPlanow() {
@@ -317,6 +338,7 @@ async function otworzModalPlanow() {
 function renderujPlany(cennik) {
     const kontener = document.getElementById('planyLista');
     if (!kontener || !cennik) return;
+    document.querySelectorAll('#planModal .waluta-tab').forEach(b => b.classList.toggle('active', b.dataset.waluta === walutaPlanu));
 
     // STARTER i PRO są znowu widoczne na liście wyboru (wcześniej były celowo
     // schowane). Zostają też w planyPlatne niżej, bo klienci na tych planach
@@ -336,7 +358,9 @@ function renderujPlany(cennik) {
         const p = cennik[nazwa];
         if (!p) return '';
         const kontaktowy = planyKontaktowe.includes(nazwa);
-        const cena = okresPlanu === 'rok' ? p.cena_rok : p.cena_mc;
+        const cenyW = (p.ceny && p.ceny[walutaPlanu]) || null;
+        const kwota = cenyW ? (okresPlanu === 'rok' ? cenyW.rok : cenyW.mc) : (okresPlanu === 'rok' ? p.cena_rok : p.cena_mc);
+        const cena = formatujCenePlanu(kwota, cenyW ? walutaPlanu : 'PLN');
         const jednostka = okresPlanu === 'rok' ? t('period_year_short') : t('period_month_short');
         const aktywny = window.planUzytkownika === nazwa;
         const przyciskHtml = kontaktowy
@@ -349,7 +373,7 @@ function renderujPlany(cennik) {
         return `
             <div style="background:#0f172a; border:1px solid ${aktywny ? '#4f46e5' : '#334155'}; border-radius:10px; padding:22px; text-align:center;">
                 <h4 style="color:#818cf8; margin:0 0 10px 0;">${nazwa}</h4>
-                <div style="font-size:28px; font-weight:700; color:#f8fafc; margin-bottom:4px;">${cena} zł</div>
+                <div style="font-size:28px; font-weight:700; color:#f8fafc; margin-bottom:4px;">${cena}</div>
                 <div style="font-size:12px; color:#94a3b8; margin-bottom:18px;">/ ${jednostka}</div>
                 <div style="font-size:13px; color:#cbd5e1; margin-bottom:6px;">🎟️ ${p.tokeny} ${t('ai_tokens_label').toLowerCase()}/${t('period_month_short')}</div>
                 <div style="font-size:13px; color:#cbd5e1; margin-bottom:18px;">📦 ${p.produkty} ${t('products_label')}</div>
@@ -371,7 +395,7 @@ async function aktywujPlan(nazwa) {
     const data = await apiFetch('/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: nazwa, okres: okresPlanu })
+        body: JSON.stringify({ plan: nazwa, okres: okresPlanu, waluta: walutaPlanu })
     });
     if (data?.success && data.url) {
         // Przekierowanie na hostowaną przez Stripe stronę płatności - nie

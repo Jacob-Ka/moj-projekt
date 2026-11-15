@@ -852,6 +852,11 @@
                 <button id="btnOkresMc" class="filter-tab active" onclick="ustawOkresPlanu('mc', this)" data-i18n="period_monthly" style="margin-right:8px;"></button>
                 <button id="btnOkresRok" class="filter-tab" onclick="ustawOkresPlanu('rok', this)" data-i18n="period_yearly"></button>
             </div>
+            <div style="text-align:center; margin-bottom: 20px;">
+                <button class="filter-tab waluta-tab" data-waluta="PLN" onclick="ustawWalutePlanu('PLN')" style="margin-right:8px;">PLN (zł)</button>
+                <button class="filter-tab waluta-tab" data-waluta="USD" onclick="ustawWalutePlanu('USD')" style="margin-right:8px;">USD ($)</button>
+                <button class="filter-tab waluta-tab" data-waluta="EUR" onclick="ustawWalutePlanu('EUR')">EUR (€)</button>
+            </div>
             <div id="planyLista" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;">
                 <div style="text-align:center; padding: 30px; grid-column: 1/-1;"><div class="spinner"></div></div>
             </div>
