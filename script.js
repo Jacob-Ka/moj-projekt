@@ -18,7 +18,7 @@ const apiFetch = async (url, options = {}) => {
         const dane = await res.json().catch(() => null);
         if (!res.ok) {
             if (res.status === 401) { window.location.href = 'landing.html'; return null; }
-            return dane || { success: false, error: `Błąd serwera (${res.status}).` };
+            return dane || { success: false, error: tpAuto(`Błąd serwera (${res.status}).`) };
         }
         return dane;
     } catch (err) {
@@ -108,7 +108,7 @@ async function pobierzPowiadomienia() {
     const lista = document.getElementById('listaPowiadomien');
     if (!lista) return;
     if (dane.length === 0) {
-        lista.innerHTML = `<div style="text-align:center; color:#64748b; padding:24px;">Brak powiadomień.</div>`;
+        lista.innerHTML = `<div style="text-align:center; color:#64748b; padding:24px;">${tpAuto('Brak powiadomień.')}</div>`;
         return;
     }
 
@@ -234,12 +234,12 @@ function zmienPlatformeSklepu() {
     if (secretEl) secretEl.parentElement.style.display = (platforma === 'csv') ? 'none' : '';
 
     if (platforma === 'shopify') {
-        if (storeUrlEl) storeUrlEl.placeholder = 'np. twoj-sklep.myshopify.com';
-        if (secretEl) secretEl.placeholder = 'Token dostępu Admin API';
-        if (secretHelp) secretHelp.innerText = 'Token wygenerowany w Shopify: Ustawienia > Aplikacje i kanały sprzedaży > Twórz aplikację > API Admin (uprawnienia read_products, write_products).';
-        if (urlHelp) urlHelp.innerText = 'Domena Twojego sklepu Shopify (bez https://).';
+        if (storeUrlEl) storeUrlEl.placeholder = tpAuto('np. twoj-sklep.myshopify.com');
+        if (secretEl) secretEl.placeholder = tpAuto('Token dostępu Admin API');
+        if (secretHelp) secretHelp.innerText = tpAuto('Token wygenerowany w Shopify: Ustawienia > Aplikacje i kanały sprzedaży > Twórz aplikację > API Admin (uprawnienia read_products, write_products).');
+        if (urlHelp) urlHelp.innerText = tpAuto('Domena Twojego sklepu Shopify (bez https://).');
     } else if (platforma === 'woocommerce') {
-        if (storeUrlEl) storeUrlEl.placeholder = 'np. https://twojsklep.pl';
+        if (storeUrlEl) storeUrlEl.placeholder = tpAuto('np. https://twojsklep.pl');
         if (secretEl) secretEl.placeholder = 'Consumer Secret (cs_...)';
         if (secretHelp) secretHelp.innerText = t('woo_secret_help');
         if (urlHelp) urlHelp.innerText = t('store_url_help');
@@ -273,7 +273,7 @@ async function zapiszFloorPriceGlobalny() {
 // wąskomarżowych produktach, gdzie globalny procent byłby zbyt niski
 // (mógłby zejść poniżej realnego kosztu zakupu).
 async function edytujFloorPriceProduktu(id, aktualnyProcent) {
-    const wpisany = prompt(`Ustaw indywidualny procent Floor Price dla tego produktu (1-99).\nZostaw puste, żeby użyć globalnego ustawienia (${globalnyProcentFloorPrice}%).`, aktualnyProcent);
+    const wpisany = prompt(tpAuto(`Ustaw indywidualny procent Floor Price dla tego produktu (1-99).\nZostaw puste, żeby użyć globalnego ustawienia (${globalnyProcentFloorPrice}%).`), aktualnyProcent);
     if (wpisany === null) return; // anulowano
 
     const procent = wpisany.trim() === '' ? null : parseFloat(wpisany);
@@ -321,7 +321,7 @@ function ustawWalutePlanu(waluta) {
 }
 
 function formatujCenePlanu(kwota, waluta) {
-    return waluta === 'USD' ? '$' + kwota : (waluta === 'EUR' ? '€' + kwota : kwota + ' zł');
+    return waluta === 'USD' ? '$' + kwota : (waluta === 'EUR' ? '€' + kwota : kwota + ' ' + (window.aktualnyJezyk && window.aktualnyJezyk !== 'pl' ? 'PLN' : 'zł'));
 }
 
 async function otworzModalPlanow() {
@@ -523,9 +523,10 @@ function pokazToast(tresc, typ = 'info', opcje = {}) {
     // komunikatu za każdym razem, gdy zdarzenie jest rutynowe (np. duży sklep
     // blokujący automatyczny odczyt ceny).
     if (opcje.wyjasnienie) {
-        toast.innerHTML = `<div>${tresc}</div><button onclick="${opcje.wyjasnienie}" style="background:none; border:none; padding:0; margin-top:6px; font-size:12px; color:#a5b4fc; text-decoration:underline; cursor:pointer;">Dlaczego?</button>`;
+        toast.innerHTML = `<div></div><button onclick="${opcje.wyjasnienie}" style="background:none; border:none; padding:0; margin-top:6px; font-size:12px; color:#a5b4fc; text-decoration:underline; cursor:pointer;">${tpAuto('Dlaczego?')}</button>`;
+        toast.firstChild.innerText = tpAuto(tresc);
     } else {
-        toast.innerText = tresc;
+        toast.innerText = tpAuto(tresc);
     }
 
     container.appendChild(toast);
@@ -556,7 +557,7 @@ function potwierdz(tresc, onConfirm) {
     btn.style.background = '';
     btn.innerText = t('btn_confirm');
 
-    textEl.innerText = tresc;
+    textEl.innerText = tpAuto(tresc);
     modal.style.display = 'flex';
 
     const nowyBtn = btn.cloneNode(true);
@@ -748,11 +749,11 @@ function otworzWyjasnienieOdczytuCeny() {
     // współdzielonego modalu potwierdzenia: jeden neutralny przycisk zamiast
     // czerwonego "Potwierdź" + zbędnego w tym kontekście "Anuluj".
     const btn = document.getElementById('confirmActionBtn');
-    if (btn) { btn.innerText = 'Rozumiem'; btn.classList.remove('btn-danger'); btn.style.background = '#4f46e5'; }
+    if (btn) { btn.innerText = tpAuto('Rozumiem'); btn.classList.remove('btn-danger'); btn.style.background = '#4f46e5'; }
     const btnAnuluj = document.querySelector('#confirmModal .btn-cancel');
     if (btnAnuluj) btnAnuluj.style.display = 'none';
     const tytul = document.querySelector('#confirmModal h3');
-    if (tytul) tytul.innerText = 'Dlaczego cena nie została odczytana?';
+    if (tytul) tytul.innerText = tpAuto('Dlaczego cena nie została odczytana?');
 }
 
 async function znajdzKonkurencjeAutomatycznie(id, btnEl) {
@@ -851,21 +852,21 @@ function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
         const szczegoly = [];
         szczegoly.push(
             propozycja.zrodloWyszukiwania === 'EAN'
-                ? `<span style="color:#34d399;">✅ Dopasowano po kodzie EAN</span>`
-                : `<span style="color:#fbbf24;">⚠️ Dopasowano po nazwie (brak/nietrafione EAN)</span>`
+                ? `<span style="color:#34d399;">${tpAuto('✅ Dopasowano po kodzie EAN')}</span>`
+                : `<span style="color:#fbbf24;">${tpAuto('⚠️ Dopasowano po nazwie (brak/nietrafione EAN)')}</span>`
         );
         szczegoly.push(
             propozycja.zweryfikowanoNaStronie
-                ? `<span style="color:#34d399;">✅ Cena zweryfikowana na żywo na stronie sklepu${propozycja.zrodloWeryfikacji === 'ai' ? ' (przez AI, dane strukturalne strony nie zawierały ceny)' : ''}</span>`
-                : `<span style="color:#fbbf24;">⚠️ Cena z wyników wyszukiwania (niezweryfikowana, może być nieaktualna)</span>`
+                ? `<span style="color:#34d399;">${tpAuto('✅ Cena zweryfikowana na żywo na stronie sklepu')}${propozycja.zrodloWeryfikacji === 'ai' ? (' ' + tpAuto('(przez AI, dane strukturalne strony nie zawierały ceny)')) : ''}</span>`
+                : `<span style="color:#fbbf24;">${tpAuto('⚠️ Cena z wyników wyszukiwania (niezweryfikowana, może być nieaktualna)')}</span>`
         );
         if (propozycja.mozliwaRozbieznoscCen) {
-            szczegoly.push(`<span style="color:#f87171;">🚨 Cena w danych strony i cena widoczna różnią się - sprawdź ręcznie</span>`);
+            szczegoly.push(`<span style="color:#f87171;">${tpAuto('🚨 Cena w danych strony i cena widoczna różnią się - sprawdź ręcznie')}</span>`);
         }
         if (propozycja.dostepnoscOferty === 'niedostepny') {
-            szczegoly.push(`<span style="color:#f87171;">🚫 Produkt może być niedostępny u konkurenta</span>`);
+            szczegoly.push(`<span style="color:#f87171;">${tpAuto('🚫 Produkt może być niedostępny u konkurenta')}</span>`);
         } else if (propozycja.dostepnoscOferty === 'dostepny') {
-            szczegoly.push(`<span style="color:#34d399;">✅ Produkt dostępny u konkurenta</span>`);
+            szczegoly.push(`<span style="color:#34d399;">${tpAuto('✅ Produkt dostępny u konkurenta')}</span>`);
         }
 
         const pewnosc = propozycja.pewnoscDopasowania || { etykieta: 'Nieznana', punkty: 50 };
@@ -875,8 +876,8 @@ function pokazModalPotwierdzeniaKonkurencji(id, propozycja) {
             <div style="display:flex; align-items:center; gap:10px; background:#0f172a; border:1px solid ${kolorPewnosci}; border-radius:8px; padding:10px 14px; margin-bottom:14px;">
                 <div style="font-size:22px;">${pewnosc.etykieta === 'Wysoka' ? '🟢' : pewnosc.etykieta === 'Niska' ? '🔴' : '🟡'}</div>
                 <div>
-                    <div style="font-weight:700; color:${kolorPewnosci}; font-size:14px;">Pewność dopasowania: ${pewnosc.etykieta} (${pewnosc.punkty}%)</div>
-                    <div style="font-size:11px; color:#94a3b8;">Wyliczona na podstawie źródła dopasowania, weryfikacji ceny, dostępności i spójności danych.</div>
+                    <div style="font-weight:700; color:${kolorPewnosci}; font-size:14px;">${tpAuto('Pewność dopasowania: ' + pewnosc.etykieta + ' (' + pewnosc.punkty + '%)').replace(pewnosc.etykieta, tpAuto(pewnosc.etykieta))}</div>
+                    <div style="font-size:11px; color:#94a3b8;">${tpAuto('Wyliczona na podstawie źródła dopasowania, weryfikacji ceny, dostępności i spójności danych.')}</div>
                 </div>
             </div>
             <div style="margin-bottom:10px;"><strong>${propozycja.tytul}</strong></div>
@@ -1009,10 +1010,10 @@ async function pobierzStatusHarmonogramu() {
     const tekstEl = document.getElementById('statusHarmonogramuTekst');
 
     const mapaStatusow = {
-        oczekuje: { tekst: 'W kolejce', kolor: '#475569' },
-        w_trakcie: { tekst: 'W trakcie', kolor: '#4f46e5' },
-        gotowe: { tekst: 'Zakończono', kolor: '#059669' },
-        blad: { tekst: 'Błąd', kolor: '#dc2626' }
+        oczekuje: { tekst: tpAuto('W kolejce'), kolor: '#475569' },
+        w_trakcie: { tekst: tpAuto('W trakcie'), kolor: '#4f46e5' },
+        gotowe: { tekst: tpAuto('Zakończono'), kolor: '#059669' },
+        blad: { tekst: tpAuto('Błąd'), kolor: '#dc2626' }
     };
     const info = mapaStatusow[dane.status] || mapaStatusow.oczekuje;
     if (etykietaEl) { etykietaEl.innerText = info.tekst; etykietaEl.style.background = info.kolor; etykietaEl.style.color = '#fff'; }
@@ -1024,11 +1025,11 @@ async function pobierzStatusHarmonogramu() {
 
     if (tekstEl) {
         if (dane.status === 'blad') {
-            tekstEl.innerText = `Błąd: ${dane.blad || 'nieznany'}`;
+            tekstEl.innerText = tpAuto('Błąd: {0}').replace('{0}', dane.blad ? dane.blad : tpAuto('nieznany'));
         } else if (lacznie > 0) {
-            tekstEl.innerText = `Sprawdzono ${przetworzono} z ${lacznie} produktów.`;
+            tekstEl.innerText = tpAuto(`Sprawdzono ${przetworzono} z ${lacznie} produktów.`);
         } else {
-            tekstEl.innerText = dane.status === 'oczekuje' ? 'Oczekuje na wolne miejsce w kolejce...' : 'Brak produktów do sprawdzenia w tym przebiegu.';
+            tekstEl.innerText = tpAuto(dane.status === 'oczekuje' ? 'Oczekuje na wolne miejsce w kolejce...' : 'Brak produktów do sprawdzenia w tym przebiegu.');
         }
     }
 
@@ -1221,9 +1222,9 @@ function renderujTabele(produkty) {
             && (Date.now() - new Date(p.ai_ostatnio_sprawdzono).getTime()) >= 24 * 60 * 60 * 1000;
         const sugestiaHtml = maSugestie
             ? `<span style="color: ${isDanger ? '#ef4444' : '#4f46e5'}; font-weight: 700; font-size: 15px;">${p.sugerowana_cena} ${symbol}</span>
-               ${isDanger ? '<span class="margin-danger">⚠️ Poniżej Floor Price</span>' : ''}
-               ${cenaZmieniona ? '<div style="color:#fbbf24; font-size:11px; margin-top:2px;">⏳ nieaktualna - cena konkurencji się zmieniła</div>' : ''}
-               ${(cenaZmieniona || starsza24h) ? `<button class="chart-badge-btn" onclick="generujSugestieAI(${p.id}, this, true)">↻ Wygeneruj od nowa</button>` : ''}`
+               ${isDanger ? '<span class="margin-danger">' + tpAuto('⚠️ Poniżej Floor Price') + '</span>' : ''}
+               ${cenaZmieniona ? '<div style="color:#fbbf24; font-size:11px; margin-top:2px;">' + tpAuto('⏳ nieaktualna - cena konkurencji się zmieniła') + '</div>' : ''}
+               ${(cenaZmieniona || starsza24h) ? `<button class="chart-badge-btn" onclick="generujSugestieAI(${p.id}, this, true)">${tpAuto('↻ Wygeneruj od nowa')}</button>` : ''}`
             : `<button class="chart-badge-btn" onclick="generujSugestieAI(${p.id}, this)">${t('btn_generate_ai')}</button>`;
 
         const rekomendacjaHtml = p.rekomendacja
@@ -1334,7 +1335,7 @@ function pokazWykresHistorii(productId, nazwaProduktu, cenaBazowa, cenaKonkurenc
     const modalTitle = document.getElementById('modalTitle');
     if (!modal) return;
 
-    modalTitle.innerText = `📊 Porównanie cen: ${nazwaProduktu}`;
+    modalTitle.innerText = tpAuto(`📊 Porównanie cen: ${nazwaProduktu}`);
     modal.style.display = 'flex';
 
     if (chartInstance) chartInstance.destroy();
@@ -1346,13 +1347,13 @@ function pokazWykresHistorii(productId, nazwaProduktu, cenaBazowa, cenaKonkurenc
         if (cenaKonkurencjiRef > 0) {
             const roznica = ((cenaBazowa - cenaKonkurencjiRef) / cenaKonkurencjiRef) * 100;
             const tekst = roznica > 0.5
-                ? `Twoja cena jest o <strong style="color:#f87171;">${roznica.toFixed(1)}% wyższa</strong> niż konkurencja`
+                ? tpAuto(`Twoja cena jest o <strong style="color:#f87171;">${roznica.toFixed(1)}% wyższa</strong> niż konkurencja`)
                 : roznica < -0.5
-                    ? `Twoja cena jest o <strong style="color:#34d399;">${Math.abs(roznica).toFixed(1)}% niższa</strong> niż konkurencja`
+                    ? tpAuto(`Twoja cena jest o <strong style="color:#34d399;">${Math.abs(roznica).toFixed(1)}% niższa</strong> niż konkurencja`)
                     : `Twoja cena jest <strong style="color:#94a3b8;">praktycznie taka sama</strong> jak u konkurencji`;
             podsumowanieEl.innerHTML = tekst;
         } else {
-            podsumowanieEl.innerHTML = `<span style="color:#94a3b8;">Brak znanej ceny konkurencji do porównania.</span>`;
+            podsumowanieEl.innerHTML = tpAuto(`<span style="color:#94a3b8;">Brak znanej ceny konkurencji do porównania.</span>`);
         }
     }
 
@@ -1567,7 +1568,7 @@ function pokazPodgladZatwierdzenia(produkty) {
             const ponizejFloor = nowa < stara * (procentFloor / 100);
             return `
                 <tr>
-                    <td><strong>${p.nazwa}</strong>${ponizejFloor ? '<div style="color:#f87171; font-size:11px; margin-top:2px;">⚠️ poniżej Floor Price</div>' : ''}</td>
+                    <td><strong>${p.nazwa}</strong>${ponizejFloor ? '<div style="color:#f87171; font-size:11px; margin-top:2px;">' + tpAuto('⚠️ poniżej Floor Price') + '</div>' : ''}</td>
                     <td>${stara.toFixed(2)} ${symbol}</td>
                     <td><strong>${nowa.toFixed(2)} ${symbol}</strong></td>
                     <td style="color:${kolorZmiany}; font-weight:600;">${strzalka} ${Math.abs(zmianaProcent).toFixed(1)}%</td>
@@ -1583,7 +1584,7 @@ function pokazPodgladZatwierdzenia(produkty) {
     if (btn) {
         const nowyBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(nowyBtn, btn);
-        nowyBtn.innerText = `Zastosuj zaznaczone (${produkty.length})`;
+        nowyBtn.innerText = tpAuto(`Zastosuj zaznaczone (${produkty.length})`);
         nowyBtn.addEventListener('click', async () => {
             if (modal) modal.style.display = 'none';
             let udane = 0, nieudane = 0;
@@ -1799,7 +1800,7 @@ function updateCurrencySymbol() {
 // Poprzednio te trzy przyciski tylko pokazywały toast - poniżej realne
 // wywołania backendu.
 async function uruchomPelnaSynchronizacje(btnEl) {
-    if (btnEl) { btnEl.disabled = true; btnEl.innerText = 'Synchronizuję...'; }
+    if (btnEl) { btnEl.disabled = true; btnEl.innerText = tpAuto('Synchronizuję...'); }
     const data = await apiFetch('/synchronizuj', { method: 'POST' });
     if (btnEl) { btnEl.disabled = false; btnEl.innerText = `▶️ ${t('btn_run_sync')}`; }
 
@@ -1860,7 +1861,7 @@ async function pobierzZamowienia() {
             <td><strong>${z.wartosc} ${getSymbol(z.waluta)}</strong></td>
             <td>
                 <select onchange="zmienStatusZamowienia(${z.id}, this.value)" style="background:#0f172a; color:${kolorStatusu(z.status)}; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-weight:600; font-size:13px;">
-                    ${['Nowe','Opłacone','Do wysyłki','Wysłane','Zrealizowane','Anulowane'].map(s => `<option value="${s}" ${s === z.status ? 'selected' : ''}>${s}</option>`).join('')}
+                    ${['Nowe','Opłacone','Do wysyłki','Wysłane','Zrealizowane','Anulowane'].map(s => `<option value="${s}" ${s === z.status ? 'selected' : ''}>${tpAuto(s)}</option>`).join('')}
                 </select>
             </td>
             <td><button class="btn-secondary" style="background:#dc2626;" onclick="usunZamowienie(${z.id})">${t('btn_delete')}</button></td>
@@ -1903,7 +1904,7 @@ async function zmienStatusZamowienia(id, status) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
     });
-    if (data?.success) pokazToast(`Status zmieniony na: ${status}`, 'success');
+    if (data?.success) pokazToast(tpAuto('Status zmieniony na: {0}').replace('{0}', tpAuto(status)), 'success');
     else pokazToast('Błąd zmiany statusu.', 'error');
 }
 
@@ -1931,7 +1932,7 @@ async function pobierzMagazyn() {
     tbody.innerHTML = dane.map(m => {
         const niskiStan = m.ilosc < 5;
         const statusHtml = niskiStan
-            ? `<span style="color:#f87171;">⚠️ Niski stan</span>`
+            ? `<span style="color:#f87171;">${tpAuto('⚠️ Niski stan')}</span>`
             : `<span style="color:#34d399;">Optymalny zapas</span>`;
         return `
             <tr>
@@ -2026,8 +2027,8 @@ async function zmienTrybCenowy() {
     });
 
     if (data?.success) {
-        const opis = tryb === 'AI' ? 'AI (analiza modelem językowym)' : tryb === 'DOPASUJ_KONKURENCJE' ? 'dopasowanie do ceny konkurencji' : tryb === 'KWOTA_PONIZEJ_KONKURENCJI' ? `${wartosc} poniżej konkurencji (stała kwota)` : `${wartosc}% poniżej konkurencji`;
-        pokazToast(`Tryb wyliczania cen ustawiony na: ${opis}.`, 'success');
+        const opis = tpAuto(tryb === 'AI' ? 'AI (analiza modelem językowym)' : tryb === 'DOPASUJ_KONKURENCJE' ? 'dopasowanie do ceny konkurencji' : tryb === 'KWOTA_PONIZEJ_KONKURENCJI' ? `${wartosc} poniżej konkurencji (stała kwota)` : `${wartosc}% poniżej konkurencji`);
+        pokazToast(tpAuto('Tryb wyliczania cen ustawiony na: {0}.').replace('{0}', opis), 'success');
     } else {
         pokazToast(data?.error || 'Błąd zapisu trybu cenowego.', 'error');
     }
@@ -2079,10 +2080,10 @@ function renderujKrokOnboardingu() {
     const trescEl = document.getElementById('onboardingTresc');
     const wsteczBtn = document.getElementById('onboardingWstecz');
     const dalejBtn = document.getElementById('onboardingDalej');
-    if (tytulEl) tytulEl.innerText = krok.tytul;
-    if (trescEl) trescEl.innerHTML = krok.tresc;
+    if (tytulEl) tytulEl.innerText = tpAuto(krok.tytul);
+    if (trescEl) trescEl.innerHTML = tpAuto(krok.tresc);
     if (wsteczBtn) wsteczBtn.style.display = onboardingAktualnyKrok > 0 ? 'inline-block' : 'none';
-    if (dalejBtn) dalejBtn.innerText = (onboardingAktualnyKrok === ONBOARDING_KROKI.length - 1) ? 'Zacznij →' : 'Dalej →';
+    if (dalejBtn) dalejBtn.innerText = (onboardingAktualnyKrok === ONBOARDING_KROKI.length - 1) ? tpAuto('Zacznij →') : tpAuto('Dalej →');
 }
 
 function onboardingKrok(kierunek) {

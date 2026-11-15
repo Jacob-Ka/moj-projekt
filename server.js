@@ -5,6 +5,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
+const { middlewareJezyka, tlumaczKomunikat, jezykZZadania } = require('./komunikaty');
 
 // ============== ALERTY NA DISCORDA (awarie serwera) ==============
 // Bez ZMIENNEJ DISCORD_WEBHOOK_URL ta funkcja jest cichym no-op - reszta
@@ -224,6 +225,8 @@ app.use((req, res, next) => {
 // więc zapytania API mogą używać ścieżek względnych (/api/...) zamiast
 // sztywno wpisanego adresu - lokalnie i po wdrożeniu działa identycznie, bez
 // zmiany kodu.
+// Tłumaczy komunikaty błędów/odpowiedzi API na język wybrany w aplikacji (ciasteczko jezyk_priceai).
+app.use('/api', middlewareJezyka);
 app.use(express.static(__dirname));
 app.use(session({
     secret: SESSION_SECRET,

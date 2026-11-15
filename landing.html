@@ -315,9 +315,9 @@
                 const res = await fetch(`${API}/demo/start`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jezyk: (function(){ try { return localStorage.getItem('jezyk_priceai') || 'pl'; } catch(e) { return 'pl'; } })() }) });
                 const data = await res.json();
                 if (data.success) window.location.href = 'index.html';
-                else alert('Nie udało się uruchomić DEMO. Sprawdź czy serwer działa.');
+                else alert(tpAuto('Nie udało się uruchomić DEMO. Sprawdź czy serwer działa.'));
             } catch (e) {
-                alert('Nie udało się połączyć z serwerem. Sprawdź czy node server.js jest uruchomiony.');
+                alert(tpAuto('Nie udało się połączyć z serwerem. Sprawdź czy node server.js jest uruchomiony.'));
             }
         }
 
@@ -341,11 +341,11 @@
                 if (data.success) {
                     window.location.href = 'index.html';
                 } else {
-                    errEl.innerText = data.error || 'Błąd logowania.';
+                    errEl.innerText = data.error || tpAuto('Błąd logowania.');
                     if (data.niezweryfikowany) resendWrapper.style.display = 'block';
                 }
             } catch (e) {
-                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+                errEl.innerText = tpAuto('Nie udało się połączyć z serwerem.');
             }
         }
 
@@ -372,7 +372,7 @@
 
             const zgoda = document.getElementById('registerZgoda')?.checked;
             if (!zgoda) {
-                errEl.innerText = 'Musisz zaakceptować Regulamin oraz Politykę Prywatności, żeby założyć konto.';
+                errEl.innerText = tpAuto('Musisz zaakceptować Regulamin oraz Politykę Prywatności, żeby założyć konto.');
                 return;
             }
 
@@ -393,10 +393,10 @@
                 } else if (data.success) {
                     window.location.href = 'index.html';
                 } else {
-                    errEl.innerText = data.error || 'Błąd rejestracji.';
+                    errEl.innerText = data.error || tpAuto('Błąd rejestracji.');
                 }
             } catch (e) {
-                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+                errEl.innerText = tpAuto('Nie udało się połączyć z serwerem.');
             }
         }
 
@@ -418,10 +418,10 @@
                 if (data.success) {
                     window.location.href = 'index.html?weryfikacja=sukces';
                 } else {
-                    errEl.innerText = data.error || 'Błąd weryfikacji.';
+                    errEl.innerText = data.error || tpAuto('Błąd weryfikacji.');
                 }
             } catch (e) {
-                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+                errEl.innerText = tpAuto('Nie udało się połączyć z serwerem.');
             }
         }
 
@@ -457,14 +457,14 @@
                     // Jedyny przypadek prawdziwego błędu tutaj: wysyłka
                     // maili jest w ogóle wyłączona po stronie serwera -
                     // pokazujemy to wprost, zamiast udawać sukces.
-                    errEl.innerText = data.error || 'Błąd.';
+                    errEl.innerText = data.error || tpAuto('Błąd.');
                     return;
                 }
                 emailDoResetuHasla = email;
                 document.getElementById('resetHaslaKrok1').style.display = 'none';
                 document.getElementById('resetHaslaKrok2').style.display = 'block';
             } catch (e) {
-                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+                errEl.innerText = tpAuto('Nie udało się połączyć z serwerem.');
             }
         }
 
@@ -485,10 +485,10 @@
                 if (data.success) {
                     window.location.href = 'index.html';
                 } else {
-                    errEl.innerText = data.error || 'Błąd.';
+                    errEl.innerText = data.error || tpAuto('Błąd.');
                 }
             } catch (e) {
-                errEl.innerText = 'Nie udało się połączyć z serwerem.';
+                errEl.innerText = tpAuto('Nie udało się połączyć z serwerem.');
             }
         }
     </script>
